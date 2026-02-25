@@ -329,6 +329,26 @@ qsv search -s email ".+" data.csv  # Keep only rows with non-empty email
 
 ---
 
+## Anti-Patterns
+
+```bash
+# BAD: awk breaks on quoted fields containing commas
+awk -F',' '{print $2}' data.csv
+
+# GOOD: Proper CSV parsing
+qsv select 2 data.csv
+```
+
+```bash
+# BAD: sort does not understand CSV structure
+sort -t',' -k3 -n data.csv
+
+# GOOD: CSV-aware sort
+qsv sort --select 3 --numeric data.csv
+```
+
+---
+
 ## Comparison: qsv vs Alternatives
 
 ### qsv vs awk
