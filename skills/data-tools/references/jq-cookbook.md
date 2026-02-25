@@ -259,7 +259,7 @@ jq '.items[] | if .score >= 90 then "A" elif .score >= 80 then "B" else "C" end'
 # Conditional field
 jq '.items[] | . + {tier: (if .revenue > 1000000 then "enterprise" else "standard" end)}' accounts.json
 
-# Try-catch (handle errors)
+# Default value (alternative operator for null/false)
 jq '.items[] | .nested.field // "default"' data.json
 ```
 

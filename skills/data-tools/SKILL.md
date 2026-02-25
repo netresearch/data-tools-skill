@@ -107,6 +107,8 @@ jq '.version = "2.0.0"' package.json > package.json.tmp && mv package.json.tmp p
 jq '.version = "2.0.0"' package.json | sponge package.json
 ```
 
+> **Note:** `sponge` requires the `moreutils` package (`apt install moreutils` / `brew install moreutils`).
+
 ### GitHub CLI Integration
 
 **Always prefer the `--jq` flag over piping to jq.** It saves a process and is idiomatic.
@@ -215,6 +217,8 @@ yq -o props file.yml
 ---
 
 ## dasel -- Universal Selector
+
+Uses dasel v2 (TomWright/dasel).
 
 ### Basic Usage
 

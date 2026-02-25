@@ -187,7 +187,7 @@ yq -i '.metadata.annotations["app.kubernetes.io/version"] = "3.0.0"' deployment.
 yq -i '.data["config.yaml"] = "key: new-value\nother: setting"' configmap.yml
 
 # Add label to all resources in multi-doc
-yq -i eval-all '.metadata.labels["managed-by"] = "automation"' manifests.yml
+yq eval-all -i '.metadata.labels["managed-by"] = "automation"' manifests.yml
 ```
 
 ---
