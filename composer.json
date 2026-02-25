@@ -1,0 +1,23 @@
+{
+  "name": "netresearch/agent-data-tools",
+  "description": "AI agent skill for structured data manipulation with jq, yq, dasel, qsv",
+  "type": "ai-agent-skill",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Netresearch DTT GmbH",
+      "homepage": "https://www.netresearch.de/",
+      "role": "Manufacturer"
+    }
+  ],
+  "require": {
+    "netresearch/composer-agent-skill-plugin": "*"
+  },
+  "extra": {
+    "ai-agent-skill": "SKILL.md"
+  },
+  "support": {
+    "issues": "https://github.com/netresearch/data-tools-skill/issues",
+    "source": "https://github.com/netresearch/data-tools-skill"
+  }
+}
