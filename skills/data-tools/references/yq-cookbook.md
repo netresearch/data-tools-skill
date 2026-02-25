@@ -4,6 +4,61 @@ YAML manipulation patterns using Mike Farah's yq (Go implementation).
 
 ---
 
+## Basic Operations
+
+```bash
+# Read a field
+yq '.services.web.image' docker-compose.yml
+
+# Read nested field
+yq '.jobs.build.steps[0].uses' .github/workflows/ci.yml
+
+# List all keys at a level
+yq '.services | keys' docker-compose.yml
+```
+
+---
+
+## In-Place Editing
+
+yq supports true in-place editing with `-i`:
+
+```bash
+# Set a value
+yq -i '.version = "3.0.0"' chart.yaml
+
+# Add an element to an array
+yq -i '.services.web.ports += ["8080:8080"]' docker-compose.yml
+
+# Delete a field
+yq -i 'del(.services.debug)' docker-compose.yml
+
+# Set nested value (creates intermediate keys)
+yq -i '.jobs.test.env.CI = "true"' .github/workflows/ci.yml
+```
+
+---
+
+## Anti-Patterns
+
+```bash
+# BAD: sed does not understand YAML indentation or multi-line values
+sed -i 's/image: node:.*/image: node:20/' docker-compose.yml
+
+# GOOD: Structural edit that respects YAML semantics
+yq -i '.services.app.image = "node:20"' docker-compose.yml
+```
+
+```bash
+# BAD: grep on YAML misses context
+grep "uses:" .github/workflows/ci.yml
+
+# GOOD: Query with structure
+yq '.jobs[].steps[].uses | select(. != null)' .github/workflows/ci.yml
+```
+
+---
+
 ## GitHub Actions Workflow Editing
 
 ### Update Action Versions

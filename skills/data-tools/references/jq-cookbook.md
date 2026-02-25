@@ -4,6 +4,131 @@ Comprehensive patterns for JSON processing with jq.
 
 ---
 
+## Basic Extraction
+
+```bash
+# Single field
+jq '.name' package.json
+
+# Nested field
+jq '.repository.url' package.json
+
+# Array elements
+jq '.items[]' response.json
+
+# Array element by index
+jq '.items[0]' response.json
+
+# Multiple fields
+jq '{name: .name, version: .version}' package.json
+```
+
+---
+
+## Filtering
+
+```bash
+# Select matching objects from array
+jq '.users[] | select(.role == "admin")' users.json
+
+# Multiple conditions
+jq '.items[] | select(.age > 18 and .active == true)' data.json
+
+# Null-safe access
+jq '.items[] | select(.email != null)' data.json
+
+# Regex matching
+jq '.files[] | select(.name | test("^test.*\\.js$"))' manifest.json
+```
+
+---
+
+## Transformation
+
+```bash
+# Map over array
+jq '[.items[] | {id: .id, label: .name}]' data.json
+
+# Group by field
+jq 'group_by(.category) | map({key: .[0].category, count: length})' items.json
+
+# Sort
+jq 'sort_by(.date) | reverse' events.json
+
+# Flatten nested arrays
+jq '[.groups[].members[]]' org.json
+
+# Unique values
+jq '[.items[].category] | unique' data.json
+
+# Aggregate
+jq '[.items[].price] | add' cart.json
+```
+
+---
+
+## In-Place Editing
+
+jq does not support in-place editing natively. Use a temp file pattern:
+
+```bash
+# Safe in-place edit with temp file
+jq '.version = "2.0.0"' package.json > package.json.tmp && mv package.json.tmp package.json
+
+# Or with sponge (from moreutils)
+jq '.version = "2.0.0"' package.json | sponge package.json
+```
+
+> **Note:** `sponge` requires the `moreutils` package (`apt install moreutils` / `brew install moreutils`).
+
+---
+
+## GitHub CLI Integration
+
+**Always prefer the `--jq` flag over piping to jq.** It saves a process and is idiomatic.
+
+```bash
+# GOOD: --jq flag (preferred)
+gh api repos/owner/repo/releases --jq '.[0].tag_name'
+gh pr list --json number,title,author --jq '.[] | "\(.number)\t\(.title)\t\(.author.login)"'
+gh run list --json status,conclusion --jq '.[] | select(.status == "completed")'
+
+# BAD: piping to jq (wasteful, extra process)
+gh api repos/owner/repo/releases | jq '.[0].tag_name'
+```
+
+The `--jq` flag works on both `gh api` and structured `gh` commands that support `--json`.
+
+---
+
+## Anti-Patterns
+
+```bash
+# BAD: Fragile, breaks on formatting changes
+grep '"version"' package.json | sed 's/.*: "\(.*\)".*/\1/'
+
+# GOOD: Correct regardless of formatting
+jq -r '.version' package.json
+```
+
+```bash
+# BAD: Multi-line JSON defeats grep
+grep '"name"' response.json
+
+# GOOD: Handles any structure
+jq '.items[].name' response.json
+```
+
+```bash
+# BAD: sed on JSON changes (breaks on nested quotes, escapes)
+sed -i 's/"version": "1.0.0"/"version": "2.0.0"/' package.json
+
+# GOOD: Structural edit
+jq '.version = "2.0.0"' package.json > package.json.tmp && mv package.json.tmp package.json
+```
+
+---
+
 ## API Response Parsing
 
 ### Extract Nested Data
