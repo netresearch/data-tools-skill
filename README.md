@@ -17,12 +17,40 @@ AI agent skill for structured data manipulation. Teaches agents when and how to 
 
 ## Installation
 
-Requires [netresearch/composer-agent-skill-plugin](https://github.com/netresearch/composer-agent-skill-plugin).
+### Marketplace (Recommended)
+
+Add the [Netresearch marketplace](https://github.com/netresearch/claude-code-marketplace) once, then browse and install skills:
 
 ```bash
-composer require netresearch/agent-data-tools
+# Claude Code
+/plugin marketplace add netresearch/claude-code-marketplace
 ```
 
+### npx ([skills.sh](https://skills.sh))
+
+Install with any [Agent Skills](https://agentskills.io)-compatible agent:
+
+```bash
+npx skills add https://github.com/netresearch/data-tools-skill --skill data-tools
+```
+
+### Download Release
+
+Download the [latest release](https://github.com/netresearch/data-tools-skill/releases/latest) and extract to your agent's skills directory.
+
+### Git Clone
+
+```bash
+git clone https://github.com/netresearch/data-tools-skill.git
+```
+
+### Composer (PHP Projects)
+
+```bash
+composer require netresearch/data-tools-skill
+```
+
+Requires [netresearch/composer-agent-skill-plugin](https://github.com/netresearch/composer-agent-skill-plugin).
 ## Structure
 
 ```
