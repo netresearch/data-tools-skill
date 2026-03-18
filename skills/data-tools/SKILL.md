@@ -1,6 +1,6 @@
 ---
 name: data-tools
-description: "ALWAYS use for ANY JSON, YAML, TOML, XML, or CSV operation — querying, transforming, filtering, converting, editing structured data. MUST replace grep/sed/awk on structured formats."
+description: "Use when working with ANY JSON, YAML, TOML, XML, or CSV operation — querying, transforming, filtering, converting, editing structured data. MUST replace grep/sed/awk on structured formats."
 license: "(MIT AND CC-BY-SA-4.0). See LICENSE-MIT and LICENSE-CC-BY-SA-4.0"
 compatibility: "Requires jq, yq. Optional: dasel, qsv."
 metadata:
