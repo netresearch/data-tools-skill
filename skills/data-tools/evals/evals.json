@@ -1,0 +1,44 @@
+{
+  "skill_name": "data-tools",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "transform-json-with-jq",
+      "prompt": "Transform this JSON with jq: extract all user names from users.json where role is 'admin'. The file contains [{\"name\":\"Alice\",\"role\":\"admin\"},{\"name\":\"Bob\",\"role\":\"user\"},{\"name\":\"Carol\",\"role\":\"admin\"}].",
+      "expected_output": "A jq command that filters by role and extracts names, returning Alice and Carol.",
+      "files": [],
+      "assertions": [
+        "Uses jq (not grep, sed, or awk) for JSON processing",
+        "Uses select() or equivalent jq filter for role=='admin'",
+        "Extracts the .name field from matching objects",
+        "Command is syntactically valid jq"
+      ]
+    },
+    {
+      "id": 2,
+      "eval_name": "convert-yaml-to-json",
+      "prompt": "Convert this YAML file to JSON format: docker-compose.yml contains services with web and db entries. Use the appropriate data tool.",
+      "expected_output": "A yq command that reads YAML and outputs JSON, or a dasel command for format conversion.",
+      "files": [],
+      "assertions": [
+        "Uses yq or dasel (not manual text manipulation)",
+        "Produces valid JSON output from YAML input",
+        "Does not use grep, sed, or awk on YAML data",
+        "Command handles nested YAML structures correctly"
+      ]
+    },
+    {
+      "id": 3,
+      "eval_name": "query-csv-data",
+      "prompt": "I have a large CSV file (users.csv) with columns: id, name, email, status. Filter rows where status is 'active' and show only name and email columns.",
+      "expected_output": "A qsv command that searches by status column and selects specific columns.",
+      "files": [],
+      "assertions": [
+        "Uses qsv (not awk or cut) for CSV processing",
+        "Filters by the status column value 'active'",
+        "Selects only the name and email columns in output",
+        "Does not treat CSV as flat text with comma splitting"
+      ]
+    }
+  ]
+}
