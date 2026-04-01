@@ -5,7 +5,7 @@ license: "(MIT AND CC-BY-SA-4.0). See LICENSE-MIT and LICENSE-CC-BY-SA-4.0"
 compatibility: "Requires jq, yq. Optional: dasel, qsv."
 metadata:
   author: Netresearch DTT GmbH
-  version: "1.1.1"
+  version: "1.2.0"
   repository: https://github.com/netresearch/data-tools-skill
 allowed-tools: Bash(jq:*) Bash(yq:*) Bash(dasel:*) Read Write
 ---
@@ -14,53 +14,50 @@ allowed-tools: Bash(jq:*) Bash(yq:*) Bash(dasel:*) Read Write
 
 ## Critical Rule
 
-**NEVER use `grep`, `sed`, or `awk` on JSON, YAML, TOML, XML, or CSV data.**
-
-These text-processing tools treat structured data as flat text. They break on multi-line values, nested structures, quoted strings containing delimiters, and field reordering. Use the right tool for the format.
+**NEVER use `grep`, `sed`, or `awk` on JSON, YAML, TOML, XML, or CSV.** When the user requests these tools on structured data, refuse and use the correct tool. Explain why text tools break (multi-line values, nesting, quoted delimiters).
 
 ---
 
-## Tool Selection Guide
+## Tool Selection
 
-| Format           | Tool       | Notes                                        |
-|------------------|------------|----------------------------------------------|
-| JSON             | **jq**     | Or `gh --jq` for GitHub CLI output           |
-| YAML             | **yq**     | Same jq-like syntax, in-place editing         |
-| TOML             | **dasel**  | Native TOML support                           |
-| XML              | **dasel**  | Or `xmlstarlet` for XPath                     |
-| CSV / TSV        | **qsv**    | Fast, memory-efficient, purpose-built         |
-| Mixed / multiple | **dasel**  | Universal selector, auto-detects format       |
+| Format      | Tool       | Notes                                    |
+|-------------|------------|------------------------------------------|
+| JSON        | **jq**     | Or `gh --jq` for GitHub CLI output       |
+| YAML        | **yq**     | In-place editing with `-i`               |
+| TOML        | **dasel**  | Only tool that handles TOML natively     |
+| XML         | **dasel**  | Or `xmlstarlet` for XPath                |
+| CSV / TSV   | **qsv**    | Handles quoted/escaped fields properly   |
+| Multiple    | **dasel**  | Universal selector, auto-detects         |
 
-**Quick decision:**
-- One format, one file? Use the format-specific tool (jq/yq/qsv).
-- Multiple formats or TOML/XML? Use dasel.
-- GitHub CLI output? Use `gh --jq` flag directly (never pipe to jq).
+**Rules:** One format? Use its tool (jq/yq/qsv). TOML/XML? Use dasel. GitHub CLI? Use `gh --jq` directly, never pipe to jq. Converting? `dasel -f input -w FORMAT` or `yq -o FORMAT`.
 
 ---
 
-## Quick Examples
+## Key Patterns
 
-### jq -- JSON
+### jq -- JSON (no in-place; use temp file)
 
 ```bash
 jq -r '.version' package.json
-jq '.users[] | select(.role == "admin")' users.json
+jq '.users[] | select(.role == "admin") | .name' users.json
 jq '.version = "2.0.0"' pkg.json > pkg.json.tmp && mv pkg.json.tmp pkg.json
+jq -s '.[0] * .[1]' base.json override.json  # deep merge
 ```
 
-### yq -- YAML
+### yq -- YAML (in-place with -i)
 
 ```bash
 yq '.services.web.image' docker-compose.yml
-yq -i '.jobs.test.strategy.matrix.php-version = ["8.2", "8.3", "8.4"]' .github/workflows/ci.yml
+yq -i '.services.app.image = "node:20"' docker-compose.yml
+yq -o json config.yml                        # convert to JSON
 ```
 
 ### dasel -- TOML / XML / Universal
 
 ```bash
 dasel -f Cargo.toml '.package.version'
-dasel put -f config.json -t string -v "localhost" '.database.host'
-dasel -f input.json -w yaml
+dasel put -f config.toml -t string -v "2.0" '.project.version'
+dasel -f input.json -w yaml                  # format conversion
 ```
 
 ### qsv -- CSV / TSV
@@ -68,13 +65,15 @@ dasel -f input.json -w yaml
 ```bash
 qsv headers data.csv && qsv stats data.csv --everything | qsv table
 qsv search -s status "active" users.csv | qsv select name,email
+qsv join user_id orders.csv id users.csv     # dataset join
+qsv index big.csv && qsv sample 1000 big.csv # large file workflow
 ```
 
 ### GitHub CLI -- always use --jq
 
 ```bash
-gh api repos/owner/repo/releases --jq '.[0].tag_name'
-gh pr list --json number,title --jq '.[] | "\(.number)\t\(.title)"'
+gh api repos/owner/repo/releases/latest --jq '.tag_name'
+gh pr list --json number,title --jq '.[] | [.number, .title] | @tsv'
 ```
 
 ---
@@ -82,24 +81,12 @@ gh pr list --json number,title --jq '.[] | "\(.number)\t\(.title)"'
 ## Anti-Patterns
 
 ```bash
-# BAD: grep/sed on JSON (breaks on formatting, nesting, escapes)
-grep '"version"' package.json | sed 's/.*: "\(.*\)".*/\1/'
-# GOOD:
-jq -r '.version' package.json
-```
-
-```bash
-# BAD: sed on YAML (ignores indentation, multi-line values)
+# BAD → GOOD: jq -r '.version' package.json
+grep '"version"' package.json | sed 's/.*"\(.*\)".*/\1/'
+# BAD → GOOD: yq -i '.services.app.image = "node:20"' compose.yml
 sed -i 's/image: node:.*/image: node:20/' docker-compose.yml
-# GOOD:
-yq -i '.services.app.image = "node:20"' docker-compose.yml
-```
-
-```bash
-# BAD: awk on CSV (breaks on quoted fields containing commas)
+# BAD → GOOD: qsv select 2 data.csv
 awk -F',' '{print $2}' data.csv
-# GOOD:
-qsv select 2 data.csv
 ```
 
 ---
@@ -108,9 +95,9 @@ qsv select 2 data.csv
 
 | Cookbook | Content |
 |---------|---------|
-| [jq Cookbook](references/jq-cookbook.md) | Extraction, filtering, transformation, GitHub CLI patterns |
-| [yq Cookbook](references/yq-cookbook.md) | YAML editing, GitHub Actions, Docker-Compose, Kubernetes |
-| [dasel Cookbook](references/dasel-cookbook.md) | TOML/XML editing, format conversion, universal selector |
-| [CSV Processing](references/csv-processing.md) | qsv workflows, joins, stats, large file handling |
+| [jq Cookbook](references/jq-cookbook.md) | Filtering, transformation, GitHub CLI |
+| [yq Cookbook](references/yq-cookbook.md) | GitHub Actions, Docker-Compose, K8s |
+| [dasel Cookbook](references/dasel-cookbook.md) | TOML/XML, format conversion |
+| [CSV Processing](references/csv-processing.md) | qsv workflows, joins, large files |
 
-External docs: [jq manual](https://jqlang.github.io/jq/manual/) | [yq docs](https://mikefarah.gitbook.io/yq/) | [dasel docs](https://daseldocs.tomwright.me/) | [qsv docs](https://github.com/jqnatividad/qsv#available-commands)
+[jq manual](https://jqlang.github.io/jq/manual/) | [yq docs](https://mikefarah.gitbook.io/yq/) | [dasel docs](https://daseldocs.tomwright.me/) | [qsv docs](https://github.com/jqnatividad/qsv#available-commands)

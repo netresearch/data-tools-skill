@@ -1,6 +1,6 @@
 {
   "name": "data-tools",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Structured data manipulation with jq, yq, dasel, and qsv for JSON, YAML, TOML, XML, and CSV processing",
   "repository": "https://github.com/netresearch/data-tools-skill",
   "license": "(MIT AND CC-BY-SA-4.0)",
