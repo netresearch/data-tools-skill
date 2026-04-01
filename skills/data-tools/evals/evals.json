@@ -39,6 +39,292 @@
         "Selects only the name and email columns in output",
         "Does not treat CSV as flat text with comma splitting"
       ]
+    },
+    {
+      "id": 4,
+      "eval_name": "anti-pattern-json-grep",
+      "prompt": "I need to get the version from package.json. Can you use grep to find the version line?",
+      "expected_output": "Refuses grep approach and uses jq instead: jq -r '.version' package.json",
+      "files": [],
+      "assertions": [
+        "Does NOT use grep, sed, or awk on JSON",
+        "Uses jq to extract the version field",
+        "Uses -r flag for raw string output",
+        "Explains why grep is fragile for JSON"
+      ]
+    },
+    {
+      "id": 5,
+      "eval_name": "anti-pattern-yaml-sed",
+      "prompt": "Use sed to change the image tag in docker-compose.yml from node:18 to node:20 for the app service.",
+      "expected_output": "Refuses sed approach and uses yq instead: yq -i '.services.app.image = \"node:20\"' docker-compose.yml",
+      "files": [],
+      "assertions": [
+        "Does NOT use sed on YAML",
+        "Uses yq with -i for in-place editing",
+        "Targets the correct path .services.app.image",
+        "Explains why sed breaks on YAML indentation/multi-line values"
+      ]
+    },
+    {
+      "id": 6,
+      "eval_name": "anti-pattern-csv-awk",
+      "prompt": "Use awk -F',' to extract the second column from data.csv.",
+      "expected_output": "Refuses awk approach and uses qsv instead: qsv select 2 data.csv",
+      "files": [],
+      "assertions": [
+        "Does NOT use awk on CSV data",
+        "Uses qsv select for column extraction",
+        "Explains that awk breaks on quoted fields containing commas",
+        "Command is syntactically valid qsv"
+      ]
+    },
+    {
+      "id": 7,
+      "eval_name": "toml-read-with-dasel",
+      "prompt": "Read the package version from Cargo.toml. The file has [package] section with name and version fields.",
+      "expected_output": "A dasel command to read the TOML field: dasel -f Cargo.toml '.package.version'",
+      "files": [],
+      "assertions": [
+        "Uses dasel (not grep, sed, or jq) for TOML",
+        "Accesses the correct path .package.version",
+        "Does not attempt to use jq or yq on TOML format",
+        "Command is syntactically valid dasel"
+      ]
+    },
+    {
+      "id": 8,
+      "eval_name": "toml-write-with-dasel",
+      "prompt": "Update the version in pyproject.toml from 1.0.0 to 2.0.0. The version is at .project.version.",
+      "expected_output": "A dasel put command: dasel put -f pyproject.toml -t string -v '2.0.0' '.project.version'",
+      "files": [],
+      "assertions": [
+        "Uses dasel put for TOML editing",
+        "Specifies -t string for the value type",
+        "Targets the correct path .project.version",
+        "Does not use sed or text manipulation on TOML"
+      ]
+    },
+    {
+      "id": 9,
+      "eval_name": "github-cli-jq-flag",
+      "prompt": "Get the tag name of the latest release from the GitHub repo owner/myrepo using the gh CLI.",
+      "expected_output": "Uses gh api with --jq flag: gh api repos/owner/myrepo/releases/latest --jq '.tag_name'",
+      "files": [],
+      "assertions": [
+        "Uses gh api or gh release command",
+        "Uses --jq flag directly (not piping to jq)",
+        "Extracts .tag_name from the release object",
+        "Does not pipe gh output to a separate jq process"
+      ]
+    },
+    {
+      "id": 10,
+      "eval_name": "github-cli-pr-list-jq",
+      "prompt": "List all open pull requests for this repo showing number, title, and author login, formatted as tab-separated values.",
+      "expected_output": "Uses gh pr list with --json and --jq flags for structured output.",
+      "files": [],
+      "assertions": [
+        "Uses gh pr list with --json flag specifying fields",
+        "Uses --jq flag for formatting (not piping to jq)",
+        "Outputs number, title, and author.login fields",
+        "Uses @tsv or string interpolation with \\t for tab separation"
+      ]
+    },
+    {
+      "id": 11,
+      "eval_name": "yq-in-place-edit-yaml",
+      "prompt": "Add PHP version 8.4 to the matrix in .github/workflows/ci.yml. The current matrix is at .jobs.test.strategy.matrix.php-version and contains [\"8.2\", \"8.3\"].",
+      "expected_output": "A yq -i command that appends 8.4 to the matrix array.",
+      "files": [],
+      "assertions": [
+        "Uses yq with -i flag for in-place editing",
+        "Targets the correct matrix path",
+        "Appends '8.4' to the existing array (not replaces)",
+        "Does not use sed or manual text editing"
+      ]
+    },
+    {
+      "id": 12,
+      "eval_name": "jq-in-place-edit-json",
+      "prompt": "Update the version field in package.json from 1.0.0 to 2.0.0. Show the correct way to do in-place editing with jq.",
+      "expected_output": "Uses jq with temp file pattern since jq lacks -i: jq '.version = \"2.0.0\"' package.json > package.json.tmp && mv package.json.tmp package.json",
+      "files": [],
+      "assertions": [
+        "Uses jq for the JSON modification",
+        "Uses temp file pattern (not redirecting to same file)",
+        "The write-then-move pattern is atomic and safe",
+        "Does not use sed to modify JSON"
+      ]
+    },
+    {
+      "id": 13,
+      "eval_name": "jq-group-aggregate",
+      "prompt": "I have transactions.json with an array of objects, each having category and amount fields. Group by category and calculate the total amount per category.",
+      "expected_output": "A jq command using group_by and map with add for aggregation.",
+      "files": [],
+      "assertions": [
+        "Uses jq group_by(.category) for grouping",
+        "Uses map() with add to sum amounts per group",
+        "Produces output with category name and total",
+        "Command is syntactically valid jq"
+      ]
+    },
+    {
+      "id": 14,
+      "eval_name": "jq-null-handling",
+      "prompt": "Extract name and email from users.json array objects. Some users have null email fields - provide a default of 'N/A' for those.",
+      "expected_output": "A jq command using the alternative operator // for null handling.",
+      "files": [],
+      "assertions": [
+        "Uses jq for JSON processing",
+        "Uses the alternative operator (//) for null/missing values",
+        "Provides 'N/A' as default for null email",
+        "Extracts both name and email fields"
+      ]
+    },
+    {
+      "id": 15,
+      "eval_name": "dasel-format-conversion",
+      "prompt": "Convert a JSON configuration file (config.json) to YAML format using command-line tools.",
+      "expected_output": "Uses dasel or yq for format conversion: dasel -f config.json -w yaml or yq -P config.json",
+      "files": [],
+      "assertions": [
+        "Uses dasel or yq for conversion (not manual reformatting)",
+        "Specifies correct output format flag (-w yaml or -o yaml or -P)",
+        "Does not use echo/printf/sed for format conversion",
+        "Command produces valid YAML output"
+      ]
+    },
+    {
+      "id": 16,
+      "eval_name": "qsv-data-exploration",
+      "prompt": "I just received a new CSV file called sales.csv and need to understand its structure. Show me the columns, row count, and basic statistics.",
+      "expected_output": "A sequence of qsv commands: headers, count, and stats with table formatting.",
+      "files": [],
+      "assertions": [
+        "Uses qsv headers to show column names",
+        "Uses qsv count for row count",
+        "Uses qsv stats for statistical summary",
+        "Pipes stats output through qsv table for readability"
+      ]
+    },
+    {
+      "id": 17,
+      "eval_name": "qsv-join-datasets",
+      "prompt": "Join orders.csv (with columns order_id, user_id, amount) with users.csv (with columns id, name, email) on the user_id/id columns to get order details with user names.",
+      "expected_output": "A qsv join command: qsv join user_id orders.csv id users.csv",
+      "files": [],
+      "assertions": [
+        "Uses qsv join for the dataset merge",
+        "Specifies correct key columns (user_id from orders, id from users)",
+        "Files are in correct order for the join",
+        "Does not use awk or paste for joining CSVs"
+      ]
+    },
+    {
+      "id": 18,
+      "eval_name": "tool-selection-decision",
+      "prompt": "I need to edit values in three different config files: settings.toml, config.json, and docker-compose.yml. What tools should I use for each?",
+      "expected_output": "Recommends dasel or format-specific tools: dasel for TOML, jq for JSON, yq for YAML.",
+      "files": [],
+      "assertions": [
+        "Recommends dasel for TOML (jq/yq cannot handle TOML)",
+        "Recommends jq (or dasel) for JSON",
+        "Recommends yq (or dasel) for YAML",
+        "Does not recommend grep, sed, or awk for any format"
+      ]
+    },
+    {
+      "id": 19,
+      "eval_name": "yq-kubernetes-edit",
+      "prompt": "Update the container image for the 'app' container in deployment.yml to 'myapp:3.0'. The image is under .spec.template.spec.containers[] where name is 'app'.",
+      "expected_output": "A yq command using select to target the correct container: yq -i '(.spec.template.spec.containers[] | select(.name == \"app\")).image = \"myapp:3.0\"' deployment.yml",
+      "files": [],
+      "assertions": [
+        "Uses yq for YAML editing",
+        "Uses select(.name == 'app') to target the correct container",
+        "Sets the .image field on the selected container",
+        "Uses -i for in-place editing"
+      ]
+    },
+    {
+      "id": 20,
+      "eval_name": "jq-multi-file-merge",
+      "prompt": "Merge three JSON config files (base.json, staging.json, production.json) into a single combined object where later files override earlier ones.",
+      "expected_output": "Uses jq -s for slurp mode with object merge: jq -s '.[0] * .[1] * .[2]' base.json staging.json production.json",
+      "files": [],
+      "assertions": [
+        "Uses jq with -s (slurp) flag to read multiple files",
+        "Uses the * operator for deep object merge",
+        "Files are merged in order so later files override",
+        "Does not use cat or manual concatenation"
+      ]
+    },
+    {
+      "id": 21,
+      "eval_name": "qsv-large-file-workflow",
+      "prompt": "I have a 2GB CSV file (logs.csv). I need to index it for fast access, take a random sample of 1000 rows, and get statistics on the sample.",
+      "expected_output": "Uses qsv index, qsv sample, and qsv stats for efficient large file processing.",
+      "files": [],
+      "assertions": [
+        "Uses qsv index to create an index for fast access",
+        "Uses qsv sample for random sampling",
+        "Uses qsv stats on the sample for analysis",
+        "Does not attempt to load the entire file into memory"
+      ]
+    },
+    {
+      "id": 22,
+      "eval_name": "yq-docker-compose-service",
+      "prompt": "Add a new Redis service to docker-compose.yml with image redis:7-alpine, port mapping 6379:6379, and a named volume redis-data:/data.",
+      "expected_output": "A yq -i command that adds the complete service definition.",
+      "files": [],
+      "assertions": [
+        "Uses yq with -i for in-place editing",
+        "Adds the service under .services.redis",
+        "Includes image, ports, and volumes fields",
+        "Does not use echo/cat to append YAML text"
+      ]
+    },
+    {
+      "id": 23,
+      "eval_name": "jq-sort-unique",
+      "prompt": "From items.json (an array of objects with a 'category' field), extract all unique category values and sort them alphabetically.",
+      "expected_output": "A jq command: jq '[.[].category] | unique | sort' items.json or jq '[.[].category] | unique' items.json (unique sorts by default).",
+      "files": [],
+      "assertions": [
+        "Uses jq for JSON processing",
+        "Extracts .category from array elements",
+        "Uses unique to deduplicate values",
+        "Does not use sort/uniq shell commands on JSON output"
+      ]
+    },
+    {
+      "id": 24,
+      "eval_name": "xml-read-with-dasel",
+      "prompt": "Read the project version from a Maven pom.xml file. The version is at .project.version.",
+      "expected_output": "A dasel command: dasel -f pom.xml '.project.version'",
+      "files": [],
+      "assertions": [
+        "Uses dasel for XML reading (not grep or xmllint with xpath)",
+        "Targets the correct path .project.version",
+        "Does not use grep or regex to parse XML",
+        "Command is syntactically valid dasel"
+      ]
+    },
+    {
+      "id": 25,
+      "eval_name": "qsv-frequency-analysis",
+      "prompt": "Analyze the distribution of values in the 'status' column of orders.csv. Show the top 10 most frequent values with their counts.",
+      "expected_output": "Uses qsv frequency: qsv frequency orders.csv --select status --limit 10 | qsv table",
+      "files": [],
+      "assertions": [
+        "Uses qsv frequency for value distribution",
+        "Specifies --select status for the target column",
+        "Uses --limit for top N results",
+        "Pipes through qsv table for readable output"
+      ]
     }
   ]
 }
