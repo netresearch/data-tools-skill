@@ -1,0 +1,36 @@
+{
+  "name": "@netresearch/data-tools-skill",
+  "version": "0.0.0-source",
+  "description": "Netresearch AI skill for structured data manipulation with jq, yq, dasel, qsv.",
+  "license": "(MIT AND CC-BY-SA-4.0)",
+  "author": "Netresearch DTT GmbH (https://www.netresearch.de/)",
+  "homepage": "https://github.com/netresearch/data-tools-skill",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/netresearch/data-tools-skill.git"
+  },
+  "bugs": {
+    "url": "https://github.com/netresearch/data-tools-skill/issues"
+  },
+  "keywords": [
+    "ai-agent-skill",
+    "jq",
+    "yq",
+    "dasel",
+    "qsv",
+    "structured-data",
+    "anthropic",
+    "claude-code"
+  ],
+  "aiAgentSkill": "skills/data-tools/SKILL.md",
+  "files": [
+    "skills/data-tools/",
+    "scripts/",
+    "LICENSE-MIT",
+    "LICENSE-CC-BY-SA-4.0",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@netresearch/agent-skill-coordinator": "^0.1"
+  }
+}
