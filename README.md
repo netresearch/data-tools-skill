@@ -10,6 +10,7 @@ AI agent skill for structured data manipulation. Teaches agents when and how to 
 | [yq](https://github.com/mikefarah/yq) | YAML | Edit CI configs, docker-compose, K8s manifests |
 | [dasel](https://github.com/TomWright/dasel) | JSON/YAML/TOML/XML | Universal selector, format conversion |
 | [qsv](https://github.com/jqnatividad/qsv) | CSV/TSV | Fast data exploration, filtering, analysis |
+| [mlr](https://github.com/johnkerl/miller) | CSV/TSV/JSON/JSONL/PPRINT/XTAB/NIDX | Name-indexed records, DSL stats/joins, in-place edits |
 
 ## Core Principle
 
@@ -78,7 +79,9 @@ skills/data-tools/
   references/
     jq-cookbook.md                # Comprehensive jq patterns
     yq-cookbook.md                # YAML manipulation patterns
+    dasel-cookbook.md             # TOML/XML/universal selector patterns
     csv-processing.md            # qsv workflows and recipes
+    mlr-cookbook.md               # Miller for JSONL, DSL, stats, joins
 ```
 
 ## License

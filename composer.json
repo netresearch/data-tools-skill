@@ -3,7 +3,7 @@
     "replace": {
         "netresearch/agent-data-tools": "self.version"
     },
-    "description": "AI agent skill for structured data manipulation with jq, yq, dasel, qsv",
+    "description": "AI agent skill for structured data manipulation with jq, yq, dasel, qsv, mlr",
     "type": "ai-agent-skill",
     "license": "(MIT AND CC-BY-SA-4.0)",
     "authors": [

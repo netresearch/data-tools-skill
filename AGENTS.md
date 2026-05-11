@@ -10,7 +10,8 @@
 │       ├── jq-cookbook.md               # jq patterns and recipes
 │       ├── yq-cookbook.md               # YAML manipulation patterns
 │       ├── dasel-cookbook.md            # TOML/XML/universal selector patterns
-│       └── csv-processing.md           # qsv workflows and recipes
+│       ├── csv-processing.md           # qsv workflows and recipes
+│       └── mlr-cookbook.md              # Miller (JSONL, DSL, stats, joins)
 ├── .github/workflows/                  # CI workflows
 ├── composer.json                       # PHP package metadata
 ├── docs/                               # Architecture and planning docs
@@ -30,7 +31,7 @@ No Makefile or build scripts. This is a documentation-only skill repo.
 ## Rules
 
 1. **NEVER use `grep`, `sed`, or `awk` on JSON, YAML, TOML, XML, or CSV data** — use the format-specific tool instead.
-2. **Tool selection by format**: JSON → `jq`, YAML → `yq`, TOML/XML → `dasel`, CSV → `qsv`.
+2. **Tool selection by format**: JSON → `jq`, JSONL → `mlr`, YAML → `yq`, TOML/XML → `dasel`, CSV → `qsv` (or `mlr` for cross-format / DSL transforms).
 3. **GitHub CLI output**: always use `gh --jq` flag directly, never pipe to `jq`.
 4. **One format, one file**: use format-specific tool. Multiple formats or TOML/XML: use `dasel`.
 
@@ -41,3 +42,4 @@ No Makefile or build scripts. This is a documentation-only skill repo.
 - [yq Cookbook](skills/data-tools/references/yq-cookbook.md) — YAML manipulation patterns
 - [dasel Cookbook](skills/data-tools/references/dasel-cookbook.md) — TOML/XML/universal patterns
 - [CSV Processing](skills/data-tools/references/csv-processing.md) — qsv workflows and recipes
+- [mlr Cookbook](skills/data-tools/references/mlr-cookbook.md) — Miller for JSONL, DSL, stats, joins, in-place editing
