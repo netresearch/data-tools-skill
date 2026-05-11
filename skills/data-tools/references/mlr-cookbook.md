@@ -19,8 +19,8 @@ mlr --csv head -n 5 data.csv
 mlr --csv tail -n 5 data.csv
 
 # List column names
-mlr --csv --headerless-csv-output cat data.csv | head -1
-mlr --c2j cat data.csv | jq 'keys'   # via JSON
+head -n 1 data.csv
+mlr --c2j cat data.csv | jq '.[0] | keys'   # via JSON (keys of first record)
 ```
 
 ---
@@ -32,7 +32,7 @@ mlr's shorthand flags pair input and output formats: `--c2j` = CSV in, JSON out.
 ```bash
 # CSV <-> JSON / JSONL / TSV / Pretty-Print
 mlr --c2j cat data.csv               # CSV  -> JSON array
-mlr --c2l cat data.csv               # CSV  -> JSON Lines
+mlr --icsv --ojsonl cat data.csv     # CSV  -> JSON Lines
 mlr --c2t cat data.csv               # CSV  -> TSV
 mlr --c2p cat data.csv               # CSV  -> PPRINT (aligned table)
 mlr --j2c cat data.json              # JSON -> CSV
@@ -104,8 +104,8 @@ mlr --csv join --ul -j user_id -f users.csv orders.csv
 # Different key names on each side
 mlr --csv join -l id -r user_id -f users.csv orders.csv
 
-# Join across formats (left CSV, right JSONL, output JSON)
-mlr --icsv --ojson join -j user_id -f users.csv then put '$joined = true' orders.csv
+# Join across formats: left JSONL stream, right CSV lookup, output JSON
+mlr --ijsonl --ojson join -i csv -f users.csv -j user_id then put '$joined = true' events.jsonl
 ```
 
 ---
@@ -173,7 +173,7 @@ mlr --csv filter '$status == "active"' then cut -f id,name users.csv
 | Drop columns | `mlr --csv cut -x -f password,token data.csv` |
 | Sample N rows | `mlr --csv sample -k 100 data.csv` |
 | Reservoir sample (deterministic) | `mlr --csv --seed 42 sample -k 100 data.csv` |
-| Header-only output | `mlr --csv --headerless-csv-output cat data.csv` |
+| Data-only output (no headers) | `mlr --csv --headerless-csv-output cat data.csv` |
 | Tee to multiple formats | `mlr --icsv --ojson tee then ... data.csv` |
 | Read from stdin | `cat data.csv \| mlr --csv cat` |
 | Read gzip directly | `mlr --csv --gzin cat data.csv.gz` |

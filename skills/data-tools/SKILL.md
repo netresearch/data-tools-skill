@@ -5,7 +5,7 @@ license: "(MIT AND CC-BY-SA-4.0). See LICENSE-MIT and LICENSE-CC-BY-SA-4.0"
 compatibility: "Requires jq, yq. Optional: dasel, qsv, mlr."
 metadata:
   author: Netresearch DTT GmbH
-  version: "1.4.0"
+  version: "1.3.1"
   repository: https://github.com/netresearch/data-tools-skill
 allowed-tools: Bash(jq:*) Bash(yq:*) Bash(dasel:*) Bash(mlr:*) Read Write
 ---
@@ -30,7 +30,7 @@ allowed-tools: Bash(jq:*) Bash(yq:*) Bash(dasel:*) Bash(mlr:*) Read Write
 | CSV / TSV   | **qsv**    | Or `mlr` for cross-format / DSL           |
 | Multiple    | **dasel**  | Universal auto-detect                     |
 
-**Convert:** `dasel -w FORMAT`, `yq -o FORMAT`, or `mlr --i<x> --o<y> cat`.
+**Convert:** `dasel -w FORMAT`, `yq -o FORMAT`, or `mlr --icsv --ojson cat`.
 
 ---
 
@@ -73,9 +73,9 @@ qsv index big.csv && qsv sample 1000 big.csv
 ### mlr -- JSONL / multi-format / DSL (in-place `-I`)
 
 ```bash
-mlr --c2j cat data.csv                                 # also: --c2t, --j2c, --l2c
+mlr --c2j cat data.csv                                 # also: --c2t, --j2c
 mlr --jsonl filter '$level == "error"' logs.jsonl
-mlr --csv put -I '$total = $qty * $price' orders.csv  # also: stats1, join, sort
+mlr -I --csv put '$total = $qty * $price' orders.csv  # also: stats1, join, sort
 ```
 
 ### GitHub CLI -- always `--jq`
