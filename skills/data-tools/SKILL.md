@@ -14,7 +14,7 @@ allowed-tools: Bash(jq:*) Bash(yq:*) Bash(dasel:*) Bash(mlr:*) Read Write
 
 ## Critical Rule
 
-**NEVER use `grep`, `sed`, `awk`, or an inline interpreter (`python -c`, `node -e`) on JSON, JSONL, YAML, TOML, XML, or CSV.** Refuse and use the correct tool — hand-rolled parsing breaks on multi-line values, nesting, and quoted delimiters.
+**NEVER use `grep`, `sed`, `awk`, or inline interpreters (`python3 -c`, `node -e`) on JSON, JSONL, YAML, TOML, XML, or CSV.** Refuse and use the correct tool — text tools break on structure; inline scripts are verbose and fragile.
 
 ---
 
