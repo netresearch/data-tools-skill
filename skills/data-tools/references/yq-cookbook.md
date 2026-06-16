@@ -399,15 +399,13 @@ language, not a jq wrapper. Porting jq idioms breaks, sometimes silently:
 # BAD: `empty` is a jq builtin; mikefarah yq has no such function
 yq '.items[] // empty' file.yml      # Error: lexer: invalid input text "empty"
 
-# GOOD: a missing key already yields nothing — no `// empty` guard needed
-yq '.items[]' file.yml
-
-# GOOD: the `//` (alternative) operator DOES exist, but its right side must be a
-# value/expression — default to an empty array before iterating:
+# GOOD: default to an empty array before iterating — robust for a missing, null,
+# or empty key (the `//` alternative operator exists; its right side is a value,
+# not a jq builtin):
 yq '(.items // [])[]' file.yml
 ```
 
-Scripting trap: piping a failed `yq` through `|| true` hides the error and yields
+Scripting trap: appending `|| true` to a `yq` command hides the error and yields
 an empty result, silently dropping data (e.g. an `exclude:` list vanishing).
 Test the exact expression before relying on it — don't assume jq syntax carries
 over.
