@@ -387,3 +387,27 @@ yq 'explode(.)' config-with-anchors.yml
 | String to int | `.port \| to_number` |
 | Array to comma-sep | `.items \| join(",")` |
 | Read from stdin | `echo "key: value" \| yq '.key'` |
+
+---
+
+## yq is not jq
+
+The installed `yq` is **mikefarah yq (v4)** — a Go tool with its own expression
+language, not a jq wrapper. Porting jq idioms breaks, sometimes silently:
+
+```bash
+# BAD: `empty` is a jq builtin; mikefarah yq has no such function
+yq '.items[] // empty' file.yml      # Error: lexer: invalid input text "empty"
+
+# GOOD: a missing key already yields nothing — no `// empty` guard needed
+yq '.items[]' file.yml
+
+# GOOD: the `//` (alternative) operator DOES exist, but its right side must be a
+# value/expression — default to an empty array before iterating:
+yq '(.items // [])[]' file.yml
+```
+
+Scripting trap: piping a failed `yq` through `|| true` hides the error and yields
+an empty result, silently dropping data (e.g. an `exclude:` list vanishing).
+Test the exact expression before relying on it — don't assume jq syntax carries
+over.
