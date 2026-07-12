@@ -18,23 +18,13 @@ allowed-tools: Bash(jq:*) Bash(yq:*) Bash(dasel:*) Bash(mlr:*) Read Write
 
 ---
 
-## Tool Selection
+## Key Patterns
 
-| Format      | Tool       | Notes                                    |
-|-------------|------------|------------------------------------------|
-| JSON        | **jq**     | Or `gh --jq` for GitHub CLI              |
-| JSONL       | **mlr**    | Record-stream + DSL                       |
-| YAML        | **yq**     | In-place via `-i`                         |
-| TOML        | **dasel**  | Only native TOML tool                     |
-| XML         | **dasel**  | Or `xmlstarlet` for XPath                 |
-| CSV / TSV   | **qsv**    | Or `mlr` for cross-format / DSL           |
-| Multiple    | **dasel**  | Universal auto-detect                     |
+For the general legacy-tool → modern-tool comparison (`grep`→`rg`,
+`find`→`fd`, `cat`→`bat`, ...), see
+[cli-tools-skill's table](https://github.com/netresearch/cli-tools-skill/blob/main/skills/cli-tools/SKILL.md#preferred-modern-tools).
 
 **Convert:** `dasel -w FORMAT` or `yq -o FORMAT`.
-
----
-
-## Key Patterns
 
 ### jq -- JSON (no in-place)
 
@@ -45,6 +35,9 @@ jq '.version = "2.0.0"' pkg.json > pkg.json.tmp && mv pkg.json.tmp pkg.json
 jq -s '.[0] * .[1]' base.json override.json
 ```
 
+Or `gh --jq` when the source is the GitHub CLI (see below) — no separate
+`jq` process needed.
+
 ### yq -- YAML (in-place `-i`)
 
 ```bash
@@ -53,7 +46,7 @@ yq -i '.services.app.image = "node:20"' docker-compose.yml
 yq -o json config.yml
 ```
 
-### dasel -- TOML / XML / Universal
+### dasel -- TOML (only native tool) / XML (or `xmlstarlet` for XPath) / Universal auto-detect
 
 ```bash
 dasel -f Cargo.toml '.package.version'
