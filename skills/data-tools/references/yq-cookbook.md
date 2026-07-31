@@ -405,6 +405,27 @@ yq '.items[] // empty' file.yml      # Error: lexer: invalid input text "empty"
 yq '(.items // [])[]' file.yml
 ```
 
+String interpolation is the other idiom that does not port, and its error names
+neither jq nor interpolation:
+
+```bash
+# BAD: `"\(...)"` is jq's interpolation syntax
+yq -r '.jobs | to_entries[] | "\(.key): \(.value.uses // "-")"' .github/workflows/ci.yml
+# WARN  unclosed interpolation string, skipping interpolation
+# Error: strings cannot be subtracted
+
+# GOOD: build the string with `+`
+yq -r '.jobs | to_entries[] | .key + ": " + (.value.uses // "none")' .github/workflows/ci.yml
+```
+
+The warning is emitted, the `\(...)` is dropped, and what remains is parsed as
+arithmetic — so a quoted `"-"` reads as subtraction and the message talks about
+subtracting strings. Nothing in it points at the interpolation, which makes this
+easy to misread as the file being unparseable. It is not: the same document
+queries fine with `+` concatenation. Reach for `grep` on the YAML at that point
+and the enforcement hook will (correctly) push back, so recognising the error
+saves the detour.
+
 Scripting trap: appending `|| true` to a `yq` command hides the error and yields
 an empty result, silently dropping data (e.g. an `exclude:` list vanishing).
 Test the exact expression before relying on it — don't assume jq syntax carries
