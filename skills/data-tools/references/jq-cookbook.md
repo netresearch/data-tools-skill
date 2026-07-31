@@ -127,6 +127,15 @@ sed -i 's/"version": "1.0.0"/"version": "2.0.0"/' package.json
 jq '.version = "2.0.0"' package.json > package.json.tmp && mv package.json.tmp package.json
 ```
 
+```bash
+# BAD: jq sort on version strings is LEXICOGRAPHIC — "v4.0.1" sorts after
+# "v12.4.21", so "latest" reads wrong (misread a registry twice, 2026-07-30)
+jq -r '[.packages[].version] | sort | last' meta.json
+
+# GOOD: extract with jq, order numerically with sort -V
+jq -r '.packages[].version' meta.json | sort -V | tail -1
+```
+
 ---
 
 ## API Response Parsing
