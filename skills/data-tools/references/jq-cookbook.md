@@ -136,6 +136,24 @@ jq -r '[.packages[].version] | sort | last' meta.json
 jq -r '.packages[].version' meta.json | sort -V | tail -1
 ```
 
+```bash
+# BAD: 2>&1 merges stderr into the JSON stream. Any diagnostic text the
+# wrapped command writes to stderr — a package-manager install banner
+# (`uv run`), a CLI's own status line (`glab`) — lands ahead of or inside
+# the JSON, and the parser reports "Extra data" / a decode error even
+# though the underlying command actually succeeded (hit twice independently
+# in one session, 2026-08-13: `uv run ... 2>&1 | python3 -c json.load` and
+# `glab api ... 2>&1 | python3 -c json.load` both broke this way).
+some-command 2>&1 | jq '.field'
+
+# GOOD: keep stderr separate. Redirect it away when the command is expected
+# to succeed and you don't need to see it:
+some-command 2>/dev/null | jq '.field'
+# ...or capture both streams to separate destinations and check the exit
+# code before parsing, if you do need to see failures:
+some-command >out.json 2>err.log && jq '.field' out.json || cat err.log
+```
+
 ---
 
 ## API Response Parsing
