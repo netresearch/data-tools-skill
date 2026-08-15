@@ -1,0 +1,17 @@
+{
+  "description": "Keeps text tools (grep/sed/awk) off structured-data files — the enforcement gate for this skill's core rule",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pre_bash_structured_warn.py",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}
