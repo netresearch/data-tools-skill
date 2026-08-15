@@ -144,11 +144,19 @@ def advisory_nudges(cmd: str) -> list[str]:
 
 
 def _session_key(payload: dict) -> str:
-    sid = payload.get("session_id")
-    if sid:
-        return str(sid)
-    base = os.path.basename(payload.get("transcript_path") or "")
-    return base.rsplit(".", 1)[0] if base else ""
+    """A filename-safe digest of the session identity, or "" when there is none.
+
+    The raw identifier comes from the harness payload and is hashed rather than
+    interpolated: a value carrying `/` or `..` would otherwise steer the state
+    file out of the temp directory.
+    """
+    raw = payload.get("session_id") or os.path.basename(
+        payload.get("transcript_path") or ""
+    )
+    raw = str(raw).strip()
+    if not raw:
+        return ""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
 def first_per_session(nudges: list[str], payload: dict) -> list[str]:

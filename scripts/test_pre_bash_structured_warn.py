@@ -180,9 +180,21 @@ def main() -> int:
                 f"  {'OK  ' if ok else 'FEHL'} {'Deny bleibt pro Aufruf, Lauf ' + str(i):44} "
                 f"erwartet=DENY  erhalten={got}"
             )
+        # A session id carrying path separators must not steer the state file
+        # out of the temp directory (SonarCloud: path injection).
+        run("cat a.json", "../../../../tmp/evil")
+        escaped = os.path.exists("/tmp/evil") or os.path.exists(
+            os.path.join(tempfile.gettempdir(), "..", "evil")
+        )
+        ok = not escaped
+        fails += 0 if ok else 1
+        print(
+            f"  {'OK  ' if ok else 'FEHL'} {'Pfad-Traversal in der Session-ID':44} "
+            f"erwartet=False erhalten={escaped}"
+        )
     finally:
         for stale in os.listdir(tempfile.gettempdir()):
-            if stale.startswith(f"data-tools-hook-seen-{sid}"):
+            if stale.startswith("data-tools-hook-seen-"):
                 os.unlink(os.path.join(tempfile.gettempdir(), stale))
 
     print("  ---- Fehlschlaege:", fails)
