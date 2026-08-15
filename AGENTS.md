@@ -17,14 +17,19 @@
 ├── docs/                               # Architecture and planning docs
 │   ├── ARCHITECTURE.md
 │   └── exec-plans/
+├── hooks/hooks.json                    # Registers the PreToolUse gate (ships with the plugin)
 ├── scripts/
+│   ├── pre_bash_structured_warn.py    # The gate: denies text-tool extraction from structured files
+│   ├── test_pre_bash_structured_warn.py  # Its case list — run it after touching the gate
 │   └── verify-harness.sh              # Harness verification script
 └── README.md
 ```
 
 ## Commands
 
-No Makefile or build scripts. This is a documentation-only skill repo.
+No Makefile or build scripts.
+
+- `python3 scripts/test_pre_bash_structured_warn.py` — case list for the PreToolUse gate; run after any change to it.
 
 - `bash scripts/verify-harness.sh --format=text --status` — check harness maturity level
 

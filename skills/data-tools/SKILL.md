@@ -103,6 +103,6 @@ python3 -c 'import json;print(json.load(open("plugin.json"))["version"])'
 | [dasel Cookbook](references/dasel-cookbook.md) | TOML/XML, conversion |
 | [CSV Processing](references/csv-processing.md) | qsv workflows, joins |
 | [mlr Cookbook](references/mlr-cookbook.md) | JSONL, DSL, stats, joins |
-| [Enforcement Hook](references/enforcement-hook.md) | PreToolUse gate for grep/sed on structured files |
+| [Enforcement Hook](references/enforcement-hook.md) | PreToolUse gate shipped with this plugin: denies field extraction, warns once otherwise |
 
 Docs: [jq](https://jqlang.github.io/jq/manual/), [yq](https://mikefarah.gitbook.io/yq/), [dasel](https://daseldocs.tomwright.me/), [qsv](https://github.com/jqnatividad/qsv#available-commands), [mlr](https://miller.readthedocs.io/).

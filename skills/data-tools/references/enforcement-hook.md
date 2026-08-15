@@ -1,188 +1,73 @@
 # Enforcement Hook
 
 This skill's core rule — use `jq`/`yq`/`mlr`/`dasel` instead of `grep`/`sed`/`awk`
-on structured formats — is an instruction, and instructions get skipped. This
-reference is the gate that makes it hold: a Claude Code `PreToolUse` hook on
-`Bash` that warns when a text tool is pointed at a structured file.
+on structured formats — is an instruction, and instructions get skipped. The gate
+that makes it hold **ships with this plugin**: `hooks/hooks.json` registers
+`scripts/pre_bash_structured_warn.py` as a `PreToolUse` hook on `Bash`, so
+installing the plugin installs the enforcement. There is no per-machine setup
+step, and no copy of the script to keep in sync.
 
-Install it once per harness; it then applies to every project.
+## What it does
 
-## Check what is already there first
+Two levels, because the two cases differ in how certain the mistake is.
 
-The hook block usually exists with other matchers. Extend the array — replacing
-it drops whatever else is wired in.
+**Field extraction is denied.** `grep -oE '"x": "[^"]+"' f.json`,
+`grep … | awk '{print $2}'`, `awk -F: '{print $2}' f.yaml`, `grep -n … | cut -d: -f2`.
+A structured parser is strictly correct here and the text tool is strictly
+fragile — key order, escaping and multiline values all break it. An advisory
+message for exactly this case ran for a full session on one machine and was
+ignored every time, which is why it is a gate rather than a hint.
 
-```bash
-jq '.hooks.PreToolUse[].matcher' ~/.claude/settings.json
-```
+**Everything else warns once.** A presence, count or locate grep (`-c`, `-q`,
+`-l`, `-n`) is frequently aimed at a **comment**, which no structured parser can
+see at all, so the command is often right — as is reading a file too corrupted to
+parse, or a pre-parse sanity check. Those get one message per rule per session:
+the first firing carries the information, repeats only cost the reader attention
+while scrolling (measured: 43 advisory firings from six rules in a single
+session).
 
-No `Bash` matcher in the output means the gate is missing.
+## What it deliberately lets through
 
-## The check
+Each of these was a false positive first, then a rule:
 
-`~/.claude/hooks/pre-bash-structured-warn.py`:
-
-```python
-#!/usr/bin/env python3
-"""PreToolUse hook for Bash: warn when grep/sed/awk targets a structured-data file.
-
-The data-tools rule ("MUST replace grep/sed/awk on structured formats") exists in
-CLAUDE.md and in the data-tools skill; this is the gate that makes it hold.
-
-Uses shlex rather than splitting on '|' so a pipe inside a quoted pattern
-(grep "word\\|cap" foo.yaml) does not hide the file operand.
-"""
-
-import json
-import re
-import shlex
-import sys
-
-TOOLS = {"grep", "egrep", "fgrep", "rg", "sed", "awk", "gawk", "mawk"}
-STRUCTURED = re.compile(
-    r"\.(ya?ml|json|jsonc|jsonl|ndjson|toml|xml|csv|tsv)$", re.IGNORECASE
-)
-SEPARATORS = {"|", "||", ";", "&&", "&", "(", ")", "\n"}
-ADVICE = "jq (JSON/JSONL), yq (YAML/TOML/XML), mlr (CSV/TSV), dasel (any)"
-
-
-def segments(command):
-    """Split a shell command into pipeline/list segments, honouring quotes."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    try:
-        tokens = list(lexer)
-    except ValueError:  # unbalanced quotes — nothing reliable to say
-        return []
-
-    out, current = [], []
-    for token in tokens:
-        if token in SEPARATORS:
-            out.append(current)
-            current = []
-        else:
-            current.append(token)
-    out.append(current)
-    return [seg for seg in out if seg]
-
-
-def main():
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, ValueError):
-        return 0
-    command = (payload.get("tool_input") or {}).get("command") or ""
-    if not command:
-        return 0
-
-    hits = []
-    for seg in segments(command):
-        tool = seg[0].rsplit("/", 1)[-1]
-        if tool not in TOOLS:
-            continue
-        # Find a FILE operand, not the pattern/script. For all these tools the
-        # first non-option argument is the pattern (grep/rg) or the program
-        # (sed/awk) unless it was supplied via -e/-f, so skip exactly one.
-        args = seg[1:]
-        pattern_pending = not any(
-            a in ("-e", "-f") or a.startswith(("--regexp", "--file")) for a in args
-        )
-        skip_next = False
-        for arg in args:
-            if skip_next:
-                skip_next = False
-                continue
-            if arg in ("-e", "-f"):
-                skip_next = True
-                continue
-            if arg.startswith("-"):
-                continue
-            if pattern_pending:
-                pattern_pending = False
-                continue
-            if STRUCTURED.search(arg):
-                hits.append(f"{tool} → {arg}")
-                break
-
-    if not hits:
-        return 0
-
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "additionalContext": (
-                        "Structured-file text tool: "
-                        + ", ".join(hits)
-                        + ". Line-oriented tools miss nested keys, multi-line values,"
-                        " anchors and comments, and match text that is not the field"
-                        f" you meant. Use {ADVICE} via the data-tools skill. If you"
-                        " genuinely need a raw byte/line view (file shape, a corrupted"
-                        " file, a pre-parse sanity check), proceed."
-                    ),
-                }
-            }
-        )
-    )
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-```
-
-Two details that decide whether it works:
-
-- **Tokenize, don't split on `|`.** `grep "word\|cap" config.yaml` contains a
-  pipe *inside the pattern*; a naive `tr '|' '\n'` splits there, the file operand
-  lands in a segment starting with `cap"`, and the real case never fires. `shlex`
-  with `punctuation_chars=True` respects quoting.
-- **Skip one non-option argument.** For all these tools the first non-option
-  argument is the pattern (`grep`, `rg`) or the program (`sed`, `awk`), not a
-  file — otherwise `grep -c "foo.yaml" notes.txt` warns about its own pattern.
-  Unless `-e`/`-f` supplied it, in which case the first operand *is* the file.
-
-## Wire it up
-
-Add to the `hooks.PreToolUse` array in `~/.claude/settings.json`:
-
-```json
-{
-  "matcher": "Bash",
-  "hooks": [
-    {
-      "type": "command",
-      "command": "python3 $HOME/.claude/hooks/pre-bash-structured-warn.py",
-      "timeout": 5
-    }
-  ]
-}
-```
-
-Warn, do not block. The raw view is legitimate for checking file shape, reading
-a file too corrupted to parse, or a pre-parse sanity check — a blocking gate
-would make those cost a workaround.
+- `grep -c 'GITLEAKS' x.json` — counting a **comment**; `jq` cannot see comments.
+- `grep -n 'name' pkg.json | sed 's/^/  /'` — `grep -n` locates a line, and a
+  lone `sed` downstream is cosmetic (indenting for display). Add `cut`/`awk`
+  behind it and it is extraction again, which is denied.
+- A `.jsonl` read on one line and a `.txt` grep on the next — the check is scoped
+  per statement, not per tool call, so two unrelated statements are judged
+  separately.
+- An extraction pattern inside a **quoted heredoc** — that body is data being
+  written, not a command being run.
 
 ## Verify
 
-Pipe the payload the hook receives, rather than trusting that it works:
+Feed the hook the payload it receives, rather than trusting that it works:
 
 ```bash
-H=~/.claude/hooks/pre-bash-structured-warn.py
-echo '{"tool_input":{"command":"grep -rn \"a\\|b\" .pre-commit-config.yaml"}}' | python3 $H   # warns
-echo '{"tool_input":{"command":"jq -r .name package.json | grep foo"}}'        | python3 $H   # silent
-echo '{"tool_input":{"command":"grep -c \"foo.yaml\" notes.txt"}}'             | python3 $H   # silent
+H="$CLAUDE_PLUGIN_ROOT/scripts/pre_bash_structured_warn.py"   # or the plugin cache path
+echo '{"tool_name":"Bash","tool_input":{"command":"grep -oE \"\\\"a\\\": .\" f.json"}}' | python3 "$H"  # deny
+echo '{"tool_name":"Bash","tool_input":{"command":"grep -c TODO ci.yaml"}}'             | python3 "$H"  # warn
+echo '{"tool_name":"Bash","tool_input":{"command":"jq -r .name package.json"}}'         | python3 "$H"  # silent
 ```
 
-Then confirm the schema and that the settings watcher picked it up:
+The full case list runs as `python3 scripts/test_pre_bash_structured_warn.py`.
+
+If nothing happens on a real `grep -oE … f.json`, the plugin's hooks have not been
+picked up — open `/hooks` once, or restart the session.
+
+## If the harness already has its own gate
+
+Some setups wire a combined `PreToolUse` script in `~/.claude/settings.json` that
+covers this rule among others. Two hooks enforcing the same rule produce two
+messages for one command. Check before adding anything by hand:
 
 ```bash
-jq -e '.hooks.PreToolUse[] | select(.matcher=="Bash") | .hooks[].command' ~/.claude/settings.json
+jq -r '.hooks.PreToolUse[]?.hooks[]?.command' ~/.claude/settings.json
 ```
 
-If the JSON is right but no warning appears on a real `grep foo.yaml`, the
-watcher has not reloaded — open `/hooks` once, or restart the session.
+If a local script already covers structured-data access, remove that part of it
+and let the plugin own the rule — one rule, one place.
 
 ## Project-level variants
 
