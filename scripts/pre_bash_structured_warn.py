@@ -60,17 +60,32 @@ STATEMENT_SPLIT = re.compile(r";|\n|&&|\|\|")
 # merely *contain* a pattern. Unquoted heredocs still expand and stay in.
 QUOTED_HEREDOC = re.compile(r"<<-?\s*(['\"])(\w+)\1.*?^\2$", re.DOTALL | re.MULTILINE)
 
+
 # Prose passed as an OPTION VALUE is text about commands, not a command: a PR
 # body, a commit message, an issue comment, an echo. The check blocked its own
 # pull-request description, which explained the very patterns it matches.
 # Values of --body/--message/-m/-f body= and friends are therefore removed
 # before the scan; an option that names a FILE (--body-file) is untouched,
 # because a path is not prose.
-OPTION_VALUE = re.compile(
-    r"(?:--(?:body|message|notes|description|title|comment)(?!-file)|(?<!\w)-[mF](?!\w)"
-    r"|-f\s+\w+=)"
-    r"[= ]\s*(['\"])(?:\\.|(?!\1).)*\1",
-    re.DOTALL,
+def _quoted(group: str) -> str:
+    """A single- or double-quoted run, closing on its own opening quote.
+
+    The quote is a NAMED group so two of these can live in one pattern set;
+    with plain `(['\"])…\\1` the second copy's backreference silently points at
+    the first copy's group, never matches, and the whole branch is dead.
+    """
+    return rf"(?P<{group}>['\"])(?:\\.|(?!(?P={group})).)*(?P={group})"
+
+
+OPTION_VALUES = (
+    # --body "…" / --message='…' / -m "…" / -F '…'
+    re.compile(
+        r"(?:--(?:body|message|notes|description|title|comment)(?!-file)"
+        r"|(?<!\w)-[mF](?!\w))[= ]\s*" + _quoted("q"),
+        re.DOTALL,
+    ),
+    # gh/glab field form: -f body='…' — the '=' belongs to the field name.
+    re.compile(r"(?<!\w)-f\s+\w+=\s*" + _quoted("q"), re.DOTALL),
 )
 # `echo '…'` / `printf '…'` write text; they never extract a field.
 ECHOES_TEXT = re.compile(r"^\s*(echo|printf)\b")
@@ -89,7 +104,9 @@ def is_cosmetic_locate(cmd: str) -> bool:
 def _executable_text(cmd: str) -> str:
     """Strip the parts of a command line that are data rather than instructions."""
     cmd = QUOTED_HEREDOC.sub(" ", cmd or "")
-    return OPTION_VALUE.sub(" ", cmd)
+    for pattern in OPTION_VALUES:
+        cmd = pattern.sub(" ", cmd)
+    return cmd
 
 
 def extracts_from_structured(cmd: str) -> bool:

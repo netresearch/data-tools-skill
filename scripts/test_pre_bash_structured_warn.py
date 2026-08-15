@@ -74,6 +74,24 @@ VERDICT_CASES = [
         "durch",
         """echo "grep -oE '\\"a\\"' f.json | awk '{print}'" """,
     ),
+    # The gh/glab field form: the '=' belongs to the field name, so it needs its
+    # own branch in the pattern. Written as one alternative it never matched and
+    # every review reply carrying an example was denied.
+    (
+        "Muster in gh api -f body=",
+        "durch",
+        """gh api repos/o/r/pulls/1/comments/2/replies -f body='fixed the grep -oE "x" f.json case'""",
+    ),
+    (
+        "Muster in --body= mit Gleichheitszeichen",
+        "durch",
+        """gh pr comment 1 --body='inline grep -oE "a" f.json'""",
+    ),
+    (
+        "Muster in glab mr note -m",
+        "durch",
+        """glab mr note 1 -m 'siehe grep -oE "a" f.json'""",
+    ),
     # --body-file names a path, not prose: nothing to strip, nothing to flag.
     ("body-file bleibt unberuehrt", "durch", "gh pr create --body-file /tmp/b.md"),
     # Nothing structured in sight.
