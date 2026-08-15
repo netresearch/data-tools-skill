@@ -57,9 +57,34 @@ VERDICT_CASES = [
         "durch",
         "cat <<'EOF' > doc.md\ngrep -oE '\"x\"' f.json | awk '{print}'\nEOF",
     ),
+    # Prose ABOUT commands is not a command. This blocked the pull request that
+    # introduced the hook, whose body explained the patterns it matches.
+    (
+        "Muster nur im PR-Body",
+        "durch",
+        """gh pr create --title "gate" --body "denies grep -oE '\\"x\\"' f.json here" """,
+    ),
+    (
+        "Muster nur in der Commit-Nachricht",
+        "durch",
+        """git commit -m "document that grep -oE on a .json is denied" """,
+    ),
+    (
+        "Muster nur in echo",
+        "durch",
+        """echo "grep -oE '\\"a\\"' f.json | awk '{print}'" """,
+    ),
+    # --body-file names a path, not prose: nothing to strip, nothing to flag.
+    ("body-file bleibt unberuehrt", "durch", "gh pr create --body-file /tmp/b.md"),
     # Nothing structured in sight.
     ("grep auf Textdatei", "durch", "grep -oE 'ERROR' app.log | head -3"),
     ("jq ist korrekt", "durch", "jq -r '.name' pkg.json"),
+    # The real thing still gets caught when it sits next to prose.
+    (
+        "echte Extraktion neben Prosa bleibt DENY",
+        "DENY",
+        """git commit -m "note" && grep -oE '"a": "[^"]+"' f.json""",
+    ),
 ]
 
 # (name, expected advisory?, command)

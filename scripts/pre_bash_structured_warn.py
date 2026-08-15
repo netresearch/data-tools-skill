@@ -60,6 +60,21 @@ STATEMENT_SPLIT = re.compile(r";|\n|&&|\|\|")
 # merely *contain* a pattern. Unquoted heredocs still expand and stay in.
 QUOTED_HEREDOC = re.compile(r"<<-?\s*(['\"])(\w+)\1.*?^\2$", re.DOTALL | re.MULTILINE)
 
+# Prose passed as an OPTION VALUE is text about commands, not a command: a PR
+# body, a commit message, an issue comment, an echo. The check blocked its own
+# pull-request description, which explained the very patterns it matches.
+# Values of --body/--message/-m/-f body= and friends are therefore removed
+# before the scan; an option that names a FILE (--body-file) is untouched,
+# because a path is not prose.
+OPTION_VALUE = re.compile(
+    r"(?:--(?:body|message|notes|description|title|comment)(?!-file)|(?<!\w)-[mF](?!\w)"
+    r"|-f\s+\w+=)"
+    r"[= ]\s*(['\"])(?:\\.|(?!\1).)*\1",
+    re.DOTALL,
+)
+# `echo '…'` / `printf '…'` write text; they never extract a field.
+ECHOES_TEXT = re.compile(r"^\s*(echo|printf)\b")
+
 ADVICE = (
     "use jq (JSON/JSONL) / yq (YAML·TOML·XML) / dasel (any) / qsv·mlr (CSV·TSV) — "
     "see the `data-tools` skill"
@@ -71,10 +86,17 @@ def is_cosmetic_locate(cmd: str) -> bool:
     return bool(re.search(LOCATE, cmd)) and not re.search(NON_COSMETIC_SINK, cmd)
 
 
+def _executable_text(cmd: str) -> str:
+    """Strip the parts of a command line that are data rather than instructions."""
+    cmd = QUOTED_HEREDOC.sub(" ", cmd or "")
+    return OPTION_VALUE.sub(" ", cmd)
+
+
 def extracts_from_structured(cmd: str) -> bool:
     """True when one statement both names a structured file and extracts from it."""
-    cmd = QUOTED_HEREDOC.sub(" ", cmd or "")
-    for stmt in STATEMENT_SPLIT.split(cmd):
+    for stmt in STATEMENT_SPLIT.split(_executable_text(cmd)):
+        if ECHOES_TEXT.match(stmt):
+            continue
         if not re.search(STRUCT, stmt, re.IGNORECASE):
             continue
         if not re.search(EXTRACT, stmt):
@@ -87,7 +109,7 @@ def extracts_from_structured(cmd: str) -> bool:
 
 def advisory_nudges(cmd: str) -> list[str]:
     """Non-extracting text-tool use on a structured file: warn, do not block."""
-    cmd = QUOTED_HEREDOC.sub(" ", cmd or "")
+    cmd = _executable_text(cmd)
     out: list[str] = []
     if not re.search(STRUCT, cmd, re.IGNORECASE):
         return out
