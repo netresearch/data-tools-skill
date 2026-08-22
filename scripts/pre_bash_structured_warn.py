@@ -33,6 +33,21 @@ import tempfile
 
 STRUCT = r"\.(json|jsonl|ya?ml|toml|xml|csv|tsv)(\b|['\"])"
 
+# A response that IS JSON carries no filename: `gh api …/git/trees/…`,
+# `gh pr list --json …`. The path in `…/contents/pkg.json` happens to match
+# STRUCT, so those were covered by accident while the list endpoints — the ones
+# fleet work uses — were not, and field extraction from them stayed silent.
+JSON_API = re.compile(r"\b(?:gh|glab)\s+api\b|\bgh\s+\w+[^|;&]*\s--json\s")
+
+# …unless a parser already consumed it. `gh api … --jq '.x' | grep -oE …` greps
+# jq's OUTPUT, which is text by then and legitimately grepped. The `-q` short
+# form is matched only between `gh api` and the next pipe, because a bare `-q`
+# elsewhere is `grep -q` and would exempt every case this hook exists for.
+API_PARSED = re.compile(
+    r"\b(?:gh|glab)\s+api\b[^|;&]*\s(?:--jq|-q)\s"
+    r"|\|\s*(?:jq|yq|dasel|mlr|qsv)\b"
+)
+
 # Field extraction from a structured file — the unambiguous half.
 EXTRACT = (
     r"grep\b[^|;&]*\|\s*(awk|cut|sed|head\s+-1|tail\s+-1)\b"  # grep … | awk/cut/sed
@@ -109,12 +124,25 @@ def _executable_text(cmd: str) -> str:
     return cmd
 
 
+def reads_structured(stmt: str) -> bool:
+    """True when the statement's input is structured data.
+
+    Either it names a structured file, or it calls an API that answers JSON and
+    no parser has consumed that answer yet. Only the deny level asks this: the
+    advisory level stays filename-based on purpose, so an ordinary
+    `gh api … | head` does not start warning.
+    """
+    if re.search(STRUCT, stmt, re.IGNORECASE):
+        return True
+    return bool(JSON_API.search(stmt)) and not API_PARSED.search(stmt)
+
+
 def extracts_from_structured(cmd: str) -> bool:
-    """True when one statement both names a structured file and extracts from it."""
+    """True when one statement both reads structured data and extracts from it."""
     for stmt in STATEMENT_SPLIT.split(_executable_text(cmd)):
         if ECHOES_TEXT.match(stmt):
             continue
-        if not re.search(STRUCT, stmt, re.IGNORECASE):
+        if not reads_structured(stmt):
             continue
         if not re.search(EXTRACT, stmt):
             continue
