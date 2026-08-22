@@ -18,6 +18,12 @@ fragile — key order, escaping and multiline values all break it. An advisory
 message for exactly this case ran for a full session on one machine and was
 ignored every time, which is why it is a gate rather than a hint.
 
+The source can be a **file or an API response**. `gh api …/git/trees/…`,
+`gh pr list --json …` and `glab api …` answer JSON while naming no file, so
+extraction from them is denied too. Endpoints like `…/contents/pkg.json` were
+already covered, but only by accident — the path in the URL happens to end in
+`.json` — while the list endpoints, which is what fleet work uses, were not.
+
 **Everything else warns once.** A presence, count or locate grep (`-c`, `-q`,
 `-l`, `-n`) is frequently aimed at a **comment**, which no structured parser can
 see at all, so the command is often right — as is reading a file too corrupted to
@@ -39,6 +45,10 @@ Each of these was a false positive first, then a rule:
   separately.
 - An extraction pattern inside a **quoted heredoc** — that body is data being
   written, not a command being run.
+- `gh api … --jq '.[].title' | grep -oE '^[A-Z]+'` — after `--jq` (or `-q`, or a
+  `| jq`) the stream is text, and grepping text is what one does with it. The
+  short form is recognised only between `gh api` and the next pipe: a bare `-q`
+  anywhere else is `grep -q`, and exempting that would open the hook's main case.
 
 ## Verify
 

@@ -94,6 +94,53 @@ VERDICT_CASES = [
     ),
     # --body-file names a path, not prose: nothing to strip, nothing to flag.
     ("body-file bleibt unberuehrt", "durch", "gh pr create --body-file /tmp/b.md"),
+    # A JSON API response carries no filename. The list endpoints are what fleet
+    # work uses, and extraction from them was silent while the same extraction
+    # against a file was denied.
+    (
+        "Extraktion aus git/trees",
+        "DENY",
+        """gh api repos/o/r/git/trees/main?recursive=1 | grep -oE '"path": "[^"]+"'""",
+    ),
+    (
+        "Extraktion aus gh --json",
+        "DENY",
+        """gh pr list --json number,title | grep '"title"' | cut -d'"' -f4""",
+    ),
+    (
+        "awk -F auf einen API-Koerper",
+        "DENY",
+        """glab api projects/1/pipelines | awk -F'"' '{print $4}'""",
+    ),
+    # …but only until a parser has consumed the response. After --jq the stream
+    # is text, and grepping text is what one does with it.
+    (
+        "nach --jq ist es Text",
+        "durch",
+        """gh api repos/o/r/pulls --jq '.[].title' | grep -oE '^[A-Z]+'""",
+    ),
+    (
+        "nach -q ist es Text",
+        "durch",
+        """gh api repos/o/r/pulls -q '.[].title' | grep -oE '^[A-Z]+'""",
+    ),
+    (
+        "jq nachgeschaltet",
+        "durch",
+        """gh api repos/o/r/pulls | jq -r '.[].title'""",
+    ),
+    # The short form must not exempt a plain `grep -q` on a file — that is the
+    # case this hook exists for, and a bare `-q` appears in it.
+    (
+        "grep -q auf .json bleibt unberuehrt",
+        "durch",
+        "grep -q 'name' pkg.json",
+    ),
+    (
+        "grep -oE auf .json neben einem gh-Aufruf bleibt DENY",
+        "DENY",
+        """gh pr view 1 -q .title && grep -oE '"a": "[^"]+"' f.json""",
+    ),
     # Nothing structured in sight.
     ("grep auf Textdatei", "durch", "grep -oE 'ERROR' app.log | head -3"),
     ("jq ist korrekt", "durch", "jq -r '.name' pkg.json"),
