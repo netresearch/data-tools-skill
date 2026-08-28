@@ -152,6 +152,38 @@ def extracts_from_structured(cmd: str) -> bool:
     return False
 
 
+# Writing a structured file back THROUGH a serializer rewrites the whole file in the
+# tool's own formatting — indentation, blank lines, key order, quoting — so a three-line
+# change lands as a full-file diff (`yq -i` stripped every blank line of a
+# .gitlab-ci.yml, 2026-08-28). Read with the parser, change the lines with an editor.
+REWRITES = re.compile(
+    r"\byq\b[^|;&>]*\s(?:-i|--inplace)\b"
+    r"|\b(?:jq|yq|dasel)\b[^|;&]*>\s*[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b"
+    r"|\bsponge\s+[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b",
+    re.IGNORECASE,
+)
+REWRITE_ADVICE = (
+    "Writing a structured file back through a serializer (yq -i, jq/yq > file, sponge) "
+    "rewrites the whole file in the tool's formatting — indentation, blank lines, key order "
+    "and quoting shift, the diff becomes unreviewable. Read the value with jq/yq, then change "
+    "the line with the Edit tool (or a one-line anchored sed). If the file has no "
+    "hand-maintained formatting (a generated lock or cache), say so and set "
+    "DATA_TOOLS_REWRITE_OK=1."
+)
+
+
+def rewrites_structured(cmd: str) -> bool:
+    """True when a statement writes a structured file back through a serializer."""
+    if "DATA_TOOLS_REWRITE_OK=1" in cmd:
+        return False
+    for stmt in STATEMENT_SPLIT.split(_executable_text(cmd)):
+        if ECHOES_TEXT.match(stmt):
+            continue
+        if REWRITES.search(stmt):
+            return True
+    return False
+
+
 def advisory_nudges(cmd: str) -> list[str]:
     """Non-extracting text-tool use on a structured file: warn, do not block."""
     cmd = _executable_text(cmd)
@@ -230,6 +262,20 @@ def main() -> int:
         return 0
     cmd = (payload.get("tool_input") or {}).get("command", "")
     if not cmd:
+        return 0
+
+    if rewrites_structured(cmd):
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": REWRITE_ADVICE,
+                    }
+                }
+            )
+        )
         return 0
 
     if extracts_from_structured(cmd):

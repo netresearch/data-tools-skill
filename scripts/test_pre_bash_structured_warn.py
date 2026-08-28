@@ -18,6 +18,19 @@ HOOK = os.path.join(
 
 # (name, expected verdict, command)
 VERDICT_CASES = [
+    # Serializer rewrites — denied.
+    ("yq -i auf .gitlab-ci.yml", "DENY", "yq -i '.build.needs = []' .gitlab-ci.yml"),
+    ("yq --inplace", "DENY", "yq --inplace '.a = 1' config.yaml"),
+    ("jq > dieselbe json", "DENY", "jq '.version = \"2\"' package.json > package.json"),
+    ("yq > neue yaml", "DENY", "yq '.x' in.yml > out.yml"),
+    ("jq | sponge", "DENY", "jq '.a=1' a.json | sponge a.json"),
+    ("yq lesen geht durch", "durch", "yq '.build.script' .gitlab-ci.yml"),
+    ("jq nach txt geht durch", "durch", "jq -r '.name' pkg.json > name.txt"),
+    (
+        "Rewrite mit Freigabe geht durch",
+        "durch",
+        "DATA_TOOLS_REWRITE_OK=1 jq . a.json > a.json",
+    ),
     # Extraction — denied.
     ("grep -oE aus .json", "DENY", """grep -oE '"name": "[^"]+"' pkg.json"""),
     (
