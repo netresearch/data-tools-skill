@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "data-tools",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "description": "Structured data manipulation with jq, yq, dasel, qsv, and mlr for JSON, JSONL, YAML, TOML, XML, and CSV processing",
   "author": {
     "name": "Netresearch DTT GmbH",
