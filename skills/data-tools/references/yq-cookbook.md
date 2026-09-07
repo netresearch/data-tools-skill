@@ -373,7 +373,7 @@ yq 'explode(.)' config-with-anchors.yml
 
 ### GitHub Actions workflows: quoting style is semantic
 
-Reading a workflow with `yq` is always right — `yq '.jobs.deploy.steps[0].env.data' wf.yml` shows what the runner will actually receive, which is the fastest way to catch a mis-quoted `${{ }}` expression:
+Reading a workflow with `yq` is always right — `yq '.jobs.deploy.steps[0].env.data' wf.yml` shows the parsed scalar, i.e. the expression text GitHub Actions will evaluate, not the file as you typed it. That is the fastest way to catch a mis-quoted `${{ }}`:
 
 ```bash
 # The file looks fine; the parsed value is not
@@ -382,7 +382,7 @@ yq '.jobs.render.steps[1].env.data' .github/workflows/main-rendering.yml
 #                                                    ^ '' collapsed to one quote
 ```
 
-Writing one with `yq -i` deserves a check afterwards. Inside a single-quoted YAML scalar `''` is an escaped quote, and GitHub expression strings are single-quoted, so scalar style decides whether an expression survives — a folded scalar (`>-`) carries `toJSON(format('{0}', x))` verbatim where a single-quoted one destroys it. A `yq -i` round-trip re-emits scalars in its own style, so verify the values you touched (and their neighbours) parse as intended, or edit those lines textually. Comments survive; quoting style is what moves.
+Writing one with `yq -i` deserves a check afterwards. Inside a single-quoted YAML scalar `''` is one escaped quote, and GitHub expression strings are single-quoted, so scalar style decides how the expression must be written. A single-quoted scalar can carry it — every quote of the expression has to be doubled, so `toJSON(format('{0}', x))` becomes `toJSON(format(''{0}'', x))` and an expression's own empty string `''` becomes `''''`. Miss one doubling and YAML hands the runner a different expression, which is what the example above shows. A folded scalar (`>-`) takes the expression verbatim and removes the question. A `yq -i` round-trip re-emits scalars in its own style, so verify the values you touched (and their neighbours) parse as intended, or edit those lines textually. Comments survive; quoting style is what moves.
 
 ---
 
