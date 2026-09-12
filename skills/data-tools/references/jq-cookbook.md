@@ -202,8 +202,8 @@ jq '.items[] | {name} + (if .email then {email} else {} end)' users.json
 Everything else is true, including the values most languages treat as empty:
 
 ```bash
-$ jq -n '["", 0, [], {}, null, false] | map(if . then "truthy" else "falsy" end)'
-["truthy","truthy","truthy","truthy","falsy","falsy"]
+# Prints ["truthy","truthy","truthy","truthy","falsy","falsy"]
+jq -n '["", 0, [], {}, null, false] | map(if . then "truthy" else "falsy" end)'
 ```
 
 So `if .error then …` fires on `"error": ""`, and the conditional-inclusion
