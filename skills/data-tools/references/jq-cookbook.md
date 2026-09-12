@@ -193,8 +193,39 @@ jq '.items[] | {name, email: (.email // "N/A")}' users.json
 jq '[.items[] | select(.email != null)]' users.json
 
 # Conditional field inclusion
+# NOTE: this keeps "email": "" — see "Only null and false are falsy" below
 jq '.items[] | {name} + (if .email then {email} else {} end)' users.json
 ```
+
+### Only `null` and `false` are falsy
+
+Everything else is true, including the values most languages treat as empty:
+
+```bash
+$ jq -n '["", 0, [], {}, null, false] | map(if . then "truthy" else "falsy" end)'
+["truthy","truthy","truthy","truthy","falsy","falsy"]
+```
+
+So `if .error then …` fires on `"error": ""`, and the conditional-inclusion
+recipe above emits `{"name":"a","email":""}` for an empty address. The damage is
+worst on an **error or status field**, because the filter then reports a failure
+that did not happen and the output looks like a real finding rather than a bug in
+the query:
+
+```bash
+# WRONG — an empty error string reads as an error
+jq -r 'if .error then "ERROR: \(.error)" else "ok" end'
+
+# Right — test the value, not its truthiness
+jq -r 'if (.error // "") != "" then "ERROR: \(.error)" else "ok" end'
+```
+
+Use `// ""` (or `// []`, `// 0`) to normalise first and then compare explicitly.
+Note that `//` is itself defined on the same rule — `("" // "fallback")` is `""`,
+not `"fallback"` — so it fills in for `null` and `false` only, which is exactly
+what you want here and a surprise if you expected it to catch `""` too.
+
+Measured with jq 1.8.2.
 
 ---
 
