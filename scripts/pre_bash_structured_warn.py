@@ -158,7 +158,7 @@ def extracts_from_structured(cmd: str) -> bool:
 # .gitlab-ci.yml, 2026-08-28). Read with the parser, change the lines with an editor.
 REWRITES = re.compile(
     r"\byq\b[^|;&>]*\s(?:-i|--inplace)\b"
-    r"|\b(?:jq|yq|dasel)\b[^|;&]*>\s*[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b"
+    r"|(?<!-)\b(?:jq|yq|dasel)\b[^|;&]*>\s*[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b"
     r"|\bsponge\s+[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b",
     re.IGNORECASE,
 )

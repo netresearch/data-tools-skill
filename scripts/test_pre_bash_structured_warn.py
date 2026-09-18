@@ -26,6 +26,25 @@ VERDICT_CASES = [
     ("jq | sponge", "DENY", "jq '.a=1' a.json | sponge a.json"),
     ("yq lesen geht durch", "durch", "yq '.build.script' .gitlab-ci.yml"),
     ("jq nach txt geht durch", "durch", "jq -r '.name' pkg.json > name.txt"),
+    # `--jq` / `--yq` are FLAGS of gh and glab, not the serializer. The output
+    # is a fresh capture of an API answer; no structured file is written back.
+    (
+        "gh api --jq nach .json geht durch",
+        "durch",
+        "gh api repos/o/r/pulls/comments/1 --jq '{path,body}' > /tmp/s/cr.json",
+    ),
+    (
+        "gh api --jq= nach .json geht durch",
+        "durch",
+        "gh api repos/o/r --jq='.name' > /tmp/s/o.json",
+    ),
+    (
+        "glab api --yq nach .yaml geht durch",
+        "durch",
+        "glab api projects/1 --yq '.path' > /tmp/s/p.yaml",
+    ),
+    # …und ein echtes jq mit vorangehendem Pfad bleibt gesperrt.
+    ("/usr/bin/jq > neue json", "DENY", "/usr/bin/jq '.a=1' a.json > b.json"),
     (
         "Rewrite mit Freigabe geht durch",
         "durch",
