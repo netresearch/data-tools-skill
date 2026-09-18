@@ -45,6 +45,13 @@ VERDICT_CASES = [
     ),
     # …und ein echtes jq mit vorangehendem Pfad bleibt gesperrt.
     ("/usr/bin/jq > neue json", "DENY", "/usr/bin/jq '.a=1' a.json > b.json"),
+    # `-i` is the include-headers flag of gh/glab api, not yq's in-place flag,
+    # so `--yq … -i` must not reach the rewrite branch either.
+    (
+        "glab api --yq mit -i geht durch",
+        "durch",
+        "glab api projects/1 --yq '.path' -i",
+    ),
     (
         "Rewrite mit Freigabe geht durch",
         "durch",
