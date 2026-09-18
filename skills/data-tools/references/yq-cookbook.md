@@ -85,16 +85,32 @@ yq -i '
 A `grep` for `uses:` over `.github/workflows/` also matches the word inside prose comments and inside `run:` script bodies, which inflates the count and puts non-references into the result. Ask the structure instead:
 
 ```bash
-# every action reference in the repository, with its file
-for f in .github/workflows/*.yml .github/actions/*/action.yml; do
-  [ -e "$f" ] || continue
-  yq -r '.. | select(has("uses")) | .uses' "$f" 2>/dev/null | sed "s#^#$f\t#"
-done
+# ONE file list, reused by both questions. GitHub accepts .yml and .yaml, and a
+# local composite action carries references under runs.steps[*].uses — leaving
+# either out yields an audit that reports "clean" because it never looked.
+mapfile -t FILES < <(find .github/workflows .github/actions \
+  -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sort)
 
-# the supply-chain question: which references are not pinned to a 40-hex SHA
-for f in .github/workflows/*.yml; do
-  yq -r '.. | select(has("uses")) | .uses' "$f" 2>/dev/null
-done | sort -u | grep -vE '@[0-9a-f]{40}$'
+# A file yq cannot parse fails the audit instead of dropping out of it:
+# `2>/dev/null` into a pipe hides the parse error behind the last stage's
+# exit status, and the file simply stops appearing in the report.
+refs() {
+  local f rc=0 out err
+  out=$(mktemp); err=$(mktemp)
+  for f in "${FILES[@]}"; do
+    if yq -r '.. | select(has("uses")) | .uses' "$f" >"$out" 2>"$err"; then
+      sed "s#^#$f\t#" "$out"
+    else
+      printf 'cannot parse %s: %s\n' "$f" "$(cat "$err")" >&2
+      rc=1
+    fi
+  done
+  rm -f "$out" "$err"
+  return "$rc"
+}
+
+refs                                                  # the full inventory
+refs | cut -f2 | sort -u | grep -vE '@[0-9a-f]{40}$'  # the unpinned ones
 ```
 
 The second list is the one a supply-chain report asks about. Read it before acting on the report's number: an organisation's own reusable workflows are commonly bound at `@main` on purpose, so that upstream fixes propagate, and pinning them is a regression rather than a fix.
@@ -104,14 +120,24 @@ The second list is the one a supply-chain report asks about. Read it before acti
 A `run:` step is shell. Pulling it out with `yq` rather than copying it by hand gives you the bytes CI will execute — comments, heredocs and quoting intact — so it can be exercised before it reaches a runner:
 
 ```bash
-yq -r '.jobs.release.steps[-1].run' .github/workflows/release.yml > step.sh
+H=$(mktemp -d); mkdir -p "$H/sandbox" "$H/stub-bin"
+yq -r '.jobs.release.steps[-1].run' .github/workflows/release.yml > "$H/step.sh"
 
-# then drive it with the step's own env, a stub for whatever CLI it calls,
-# and one case per invocation so `set -e` behaves as it will in the job
-( cd sandbox; PATH="$PWD/../stub-bin:$PATH" TAG=v1.2.3 GITHUB_OUTPUT=out.txt bash step.sh; echo "rc=$?" )
+# Absolute paths: the step runs from the sandbox, where a relative `step.sh`
+# does not resolve. `bash -eo pipefail` because the extracted body is only what
+# sat under `run:` — the runner supplies `bash -e {0}`, and pipefail comes from
+# a `set -o pipefail` inside the body, so a plain `bash step.sh` is more
+# forgiving than the job and hides the failures you are looking for.
+( cd "$H/sandbox"
+  PATH="$H/stub-bin:$PATH" TAG=v1.2.3 GITHUB_OUTPUT=out.txt \
+    bash -eo pipefail "$H/step.sh"
+  rc=$?; echo "rc=$rc"; exit "$rc" )   # exit last: `echo` would otherwise be
+                                       # the subshell's status and swallow it
 ```
 
 `-r` matters: without it the block comes back as a JSON-quoted string with `\n` escapes rather than a runnable script.
+
+`sandbox` is a working directory, not a boundary. This executes the step's shell, so it is only for a workflow you already trust — a `run:` body from an untrusted source is untrusted code, and a directory is no defence against it.
 
 ### Read a Comment
 
