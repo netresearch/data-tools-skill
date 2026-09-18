@@ -80,6 +80,48 @@ yq -i '
 ' .github/workflows/ci.yml
 ```
 
+### Audit `uses:` Across Every Workflow
+
+A `grep` for `uses:` over `.github/workflows/` also matches the word inside prose comments and inside `run:` script bodies, which inflates the count and puts non-references into the result. Ask the structure instead:
+
+```bash
+# every action reference in the repository, with its file
+for f in .github/workflows/*.yml .github/actions/*/action.yml; do
+  [ -e "$f" ] || continue
+  yq -r '.. | select(has("uses")) | .uses' "$f" 2>/dev/null | sed "s#^#$f\t#"
+done
+
+# the supply-chain question: which references are not pinned to a 40-hex SHA
+for f in .github/workflows/*.yml; do
+  yq -r '.. | select(has("uses")) | .uses' "$f" 2>/dev/null
+done | sort -u | grep -vE '@[0-9a-f]{40}$'
+```
+
+The second list is the one a supply-chain report asks about. Read it before acting on the report's number: an organisation's own reusable workflows are commonly bound at `@main` on purpose, so that upstream fixes propagate, and pinning them is a regression rather than a fix.
+
+### Extract a `run:` Step to Execute It
+
+A `run:` step is shell. Pulling it out with `yq` rather than copying it by hand gives you the bytes CI will execute — comments, heredocs and quoting intact — so it can be exercised before it reaches a runner:
+
+```bash
+yq -r '.jobs.release.steps[-1].run' .github/workflows/release.yml > step.sh
+
+# then drive it with the step's own env, a stub for whatever CLI it calls,
+# and one case per invocation so `set -e` behaves as it will in the job
+( cd sandbox; PATH="$PWD/../stub-bin:$PATH" TAG=v1.2.3 GITHUB_OUTPUT=out.txt bash step.sh; echo "rc=$?" )
+```
+
+`-r` matters: without it the block comes back as a JSON-quoted string with `\n` escapes rather than a runnable script.
+
+### Read a Comment
+
+Comments are addressable — `yq` does not drop them, so reaching for `grep` to find one is unnecessary:
+
+```bash
+yq '.jobs.build.steps[0] | head_comment' .github/workflows/ci.yml
+yq '.database.host | line_comment' config.yml
+```
+
 ### Modify Matrix Strategy
 
 ```bash
