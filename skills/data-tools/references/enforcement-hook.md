@@ -66,6 +66,18 @@ The full case list runs as `python3 scripts/test_pre_bash_structured_warn.py`.
 If nothing happens on a real `grep -oE … f.json`, the plugin's hooks have not been
 picked up — open `/hooks` once, or restart the session.
 
+**Silence is not proof the rule did not match.** The advisory level deduplicates
+per rule per session: the first firing speaks and every later one is suppressed,
+whatever it matched. So a command that draws nothing may have matched and been
+swallowed as a repeat, and the two are indistinguishable from the operator's
+seat. That produced a wrong bug report — a file case warned, the same rule on an
+API body stayed quiet, and "it cannot see API bodies" was the natural and wrong
+reading (#41).
+
+Feeding the hook its payload, as above, is the instrument that settles it: a
+direct invocation carries no session history, so it always answers. A fresh
+session id does the same for an end-to-end check.
+
 ## If the harness already has its own gate
 
 Some setups wire a combined `PreToolUse` script in `~/.claude/settings.json` that
