@@ -304,7 +304,7 @@ def main() -> int:
                     "systemMessage": (
                         "data-tools: "
                         + " ".join(nudges)
-                        + " (warned once per rule per session)"
+                        + " (further matches of this rule stay silent this session)"
                     ),
                     "suppressOutput": True,
                 }

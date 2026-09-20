@@ -16,6 +16,9 @@ HOOK = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "pre_bash_structured_warn.py"
 )
 
+# The one line the first advisory carries so the dedup is visible exactly once.
+SUPPRESSION_NOTICE = "further matches of this rule stay silent this session"
+
 # (name, expected verdict, command)
 VERDICT_CASES = [
     # Serializer rewrites — denied.
@@ -205,7 +208,7 @@ ADVISORY_CASES = [
 ]
 
 
-def run(cmd: str, session_id: str | None = None) -> tuple[str, bool]:
+def run(cmd: str, session_id: str | None = None) -> tuple[str, bool, str]:
     payload = {"tool_name": "Bash", "tool_input": {"command": cmd}}
     if session_id is not None:
         payload["session_id"] = session_id
@@ -217,7 +220,7 @@ def run(cmd: str, session_id: str | None = None) -> tuple[str, bool]:
         check=False,
     )
     verdict = "DENY" if '"deny"' in p.stdout else "durch"
-    return verdict, "systemMessage" in p.stdout
+    return verdict, "systemMessage" in p.stdout, p.stdout
 
 
 def main() -> int:
@@ -225,7 +228,7 @@ def main() -> int:
     sid = f"test-{uuid.uuid4()}"
     try:
         for name, want, cmd in VERDICT_CASES:
-            got, _ = run(cmd)
+            got, _, _ = run(cmd)
             ok = got == want
             fails += 0 if ok else 1
             print(
@@ -234,7 +237,7 @@ def main() -> int:
 
         for name, want, cmd in ADVISORY_CASES:
             # Fresh session per case so the dedup does not hide a real firing.
-            _, got = run(cmd, f"{sid}-{uuid.uuid4()}")
+            _, got, _ = run(cmd, f"{sid}-{uuid.uuid4()}")
             ok = got == want
             fails += 0 if ok else 1
             print(
@@ -242,7 +245,7 @@ def main() -> int:
             )
 
         # Dedup: same rule twice in one session warns once; a new session warns again.
-        first = run("cat a.json", sid)[1]
+        _, first, first_out = run("cat a.json", sid)
         second = run("cat b.json", sid)[1]
         third = run("cat c.json", f"{sid}-other")[1]
         for name, want, got in (
@@ -255,6 +258,16 @@ def main() -> int:
             print(
                 f"  {'OK  ' if ok else 'FEHL'} {name:44} erwartet={want!s:5} erhalten={got}"
             )
+
+        # The first firing says that the rule now goes quiet (#41): silence
+        # after it must not read as "the rule did not match".
+        got = SUPPRESSION_NOTICE in first_out
+        ok = got
+        fails += 0 if ok else 1
+        print(
+            f"  {'OK  ' if ok else 'FEHL'} "
+            f"{'erste Warnung nennt die Unterdrueckung':44} erwartet=True  erhalten={got}"
+        )
 
         # A deny is never deduped — the command must be blocked every time.
         d1 = run("""grep -oE '"a": "[^"]+"' f.json""", sid)[0]
