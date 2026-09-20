@@ -156,6 +156,42 @@ some-command >out.json 2>err.log && jq '.field' out.json || cat err.log
 
 ---
 
+## Iterating a key that may be absent is a runtime error, not an empty result
+
+`jq -r '.key[]'` on a document without `key` does not print nothing — it fails:
+
+```bash
+$ echo '{"other": 1}' | jq -r '.baseBranches[]'
+jq: error (at <stdin>:1): Cannot iterate over null (null)
+$ echo $?
+5
+```
+
+Exit **5** is a jq runtime error, distinct from exit **2** for a file jq could
+not open. Neither is 0, and that is what turns a legitimate state — an optional
+key simply not being set — into a failure.
+
+In a CI script the failure is constructed to be invisible. Under
+`set -eo pipefail` the status propagates through the pipe into the assignment
+and `set -e` ends the job **before** any diagnostic line runs, while a
+`2>/dev/null` on the jq suppresses the message as well. What remains in the
+trace is a collapsed command with no output and `exit code 5`:
+
+```bash
+# BAD — dies here, and prints nothing that says why
+set -eo pipefail
+X=$(jq -r '.baseBranches[]' renovate.json 2>/dev/null | paste -sd '|')
+echo "branches: $X"        # never reached
+
+# GOOD — `[]?` yields nothing and exits 0 for a missing or null key;
+# `|| true` covers the file-not-found case, which `?` does not
+X=$(jq -r '.baseBranches[]?' renovate.json 2>/dev/null | paste -sd '|' || true)
+```
+
+Measured with jq 1.8.2: `.key[]` on a missing key exits 5, `.key[]?` exits 0 with
+no output, and a missing file exits 2. When a CI job reports `exit code 5` with
+no output at all and jq appears anywhere in the script, suspect this first.
+
 ## API Response Parsing
 
 ### Extract Nested Data
