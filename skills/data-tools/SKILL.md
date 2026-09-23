@@ -22,7 +22,7 @@ allowed-tools: Bash(jq:*) Bash(yq:*) Bash(dasel:*) Bash(mlr:*) Read Write
 
 For the general legacy-tool → modern-tool comparison (`grep`→`rg`,
 `find`→`fd`, `cat`→`bat`, ...), see
-[cli-tools-skill's table](https://github.com/netresearch/cli-tools-skill/blob/main/skills/cli-tools/SKILL.md#preferred-modern-tools).
+[the cli-tools skill's table](https://github.com/netresearch/coding_agent_cli_toolset/blob/main/skills/cli-tools/SKILL.md#preferred-modern-tools).
 
 **Convert:** `dasel -w FORMAT` or `yq -o FORMAT`.
 
