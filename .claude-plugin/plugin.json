@@ -1,6 +1,6 @@
 {
   "name": "data-tools",
-  "version": "1.9.4",
+  "version": "1.9.5",
   "description": "Structured data manipulation with jq, yq, dasel, qsv, and mlr for JSON, JSONL, YAML, TOML, XML, and CSV processing",
   "author": {
     "name": "Netresearch DTT GmbH",
