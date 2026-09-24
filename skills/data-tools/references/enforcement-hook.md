@@ -24,6 +24,15 @@ extraction from them is denied too. Endpoints like `…/contents/pkg.json` were
 already covered, but only by accident — the path in the URL happens to end in
 `.json` — while the list endpoints, which is what fleet work uses, were not.
 
+The check reads the **whole statement**, so one structured file anywhere in an
+argument list decides it. `grep -oE 'deptrac[a-z]*' Makefile composer.json` and
+`grep deptrac Makefile composer.json | cut -d: -f2` are denied, although the
+same commands on `Makefile` alone pass silently; the plain file does not rescue
+the call. Split it: the line tool on the plain file, `jq`/`yq` on the
+structured one, as two statements or two calls. Two statements in one call pass
+the deny check but can still draw the one-time warning, which reads the whole
+call.
+
 **Everything else warns once.** A presence, count or locate grep (`-c`, `-q`,
 `-l`, `-n`) is frequently aimed at a **comment**, which no structured parser can
 see at all, so the command is often right — as is reading a file too corrupted to
