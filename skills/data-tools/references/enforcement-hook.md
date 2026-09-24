@@ -29,7 +29,9 @@ argument list decides it. `grep -oE 'deptrac[a-z]*' Makefile composer.json` and
 `grep deptrac Makefile composer.json | cut -d: -f2` are denied, although the
 same commands on `Makefile` alone pass silently; the plain file does not rescue
 the call. Split it: the line tool on the plain file, `jq`/`yq` on the
-structured one, as two statements or two calls.
+structured one, as two statements or two calls. Two statements in one call pass
+the deny check but can still draw the one-time warning, which reads the whole
+call.
 
 **Everything else warns once.** A presence, count or locate grep (`-c`, `-q`,
 `-l`, `-n`) is frequently aimed at a **comment**, which no structured parser can
