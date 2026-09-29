@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+<!-- SPDX-FileCopyrightText: Netresearch DTT GmbH -->
+
 # data-tools-skill
 
 AI agent skill for structured data manipulation. Teaches agents when and how to use dedicated tools instead of fragile text processing (grep/sed/awk) on structured formats.

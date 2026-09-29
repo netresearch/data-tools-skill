@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+<!-- SPDX-FileCopyrightText: Netresearch DTT GmbH -->
+
 # mlr Cookbook
 
 Name-indexed record processing across CSV, TSV, JSON, JSON Lines, PPRINT, XTAB, and NIDX using Miller (mlr).

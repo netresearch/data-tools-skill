@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: Netresearch DTT GmbH
 """Cases for scripts/pre_bash_structured_warn.py — run it, read its verdict.
 
 Every case is a command shape that actually occurred in a session; the

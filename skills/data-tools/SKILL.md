@@ -1,4 +1,6 @@
 ---
+# SPDX-License-Identifier: CC-BY-SA-4.0
+# SPDX-FileCopyrightText: Netresearch DTT GmbH
 name: data-tools
 description: "Use when querying, transforming, filtering, converting, or editing ANY JSON, JSONL, YAML, TOML, XML, or CSV. MUST replace grep/sed/awk on structured formats."
 license: "(MIT AND CC-BY-SA-4.0). See LICENSE-MIT and LICENSE-CC-BY-SA-4.0"

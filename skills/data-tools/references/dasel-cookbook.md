@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+<!-- SPDX-FileCopyrightText: Netresearch DTT GmbH -->
+
 # dasel Cookbook
 
 Universal selector for JSON, YAML, TOML, and XML using dasel v2 (TomWright/dasel).

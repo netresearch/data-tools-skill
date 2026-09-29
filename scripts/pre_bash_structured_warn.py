@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: Netresearch DTT GmbH
 """PreToolUse hook for Bash: keep text tools off structured-data files.
 
 The data-tools rule — use jq/yq/dasel/qsv/mlr instead of grep/sed/awk on
