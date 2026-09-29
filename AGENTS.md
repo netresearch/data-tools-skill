@@ -22,6 +22,7 @@
 ├── composer.json                       # PHP package metadata
 ├── docs/                               # Architecture and planning docs
 │   ├── ARCHITECTURE.md
+│   ├── SECURITY-ASSURANCE.md
 │   └── exec-plans/
 ├── hooks/hooks.json                    # Registers the PreToolUse gate (ships with the plugin)
 ├── scripts/
@@ -49,6 +50,8 @@ No Makefile or build scripts.
 ## References
 
 - [SKILL.md](skills/data-tools/SKILL.md) — full skill definition and tool selection guide
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — components, actors, the hook's data flow
+- [docs/SECURITY-ASSURANCE.md](docs/SECURITY-ASSURANCE.md) — security assurance case: threats, trust boundaries, limits
 - [jq Cookbook](skills/data-tools/references/jq-cookbook.md) — JSON query/transform patterns
 - [yq Cookbook](skills/data-tools/references/yq-cookbook.md) — YAML manipulation patterns
 - [dasel Cookbook](skills/data-tools/references/dasel-cookbook.md) — TOML/XML/universal patterns
