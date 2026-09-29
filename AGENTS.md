@@ -9,13 +9,16 @@
 .
 ├── skills/data-tools/
 │   ├── SKILL.md                        # Main skill definition
+│   ├── evals/evals.json                # Eval definitions (structure checked in CI)
 │   └── references/
 │       ├── jq-cookbook.md               # jq patterns and recipes
 │       ├── yq-cookbook.md               # YAML manipulation patterns
 │       ├── dasel-cookbook.md            # TOML/XML/universal selector patterns
 │       ├── csv-processing.md           # qsv workflows and recipes
-│       └── mlr-cookbook.md              # Miller (JSONL, DSL, stats, joins)
-├── .github/workflows/                  # CI workflows
+│       ├── mlr-cookbook.md              # Miller (JSONL, DSL, stats, joins)
+│       └── enforcement-hook.md          # What the PreToolUse gate denies, warns about, lets through
+├── .github/workflows/                  # CI: lint, tests, eval-validate, security, harness-verify, template drift, release
+├── Build/                              # check-plugin-version.sh and the pre-push hook
 ├── composer.json                       # PHP package metadata
 ├── docs/                               # Architecture and planning docs
 │   ├── ARCHITECTURE.md

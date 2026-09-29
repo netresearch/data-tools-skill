@@ -100,7 +100,14 @@ skills/data-tools/
     dasel-cookbook.md             # TOML/XML/universal selector patterns
     csv-processing.md            # qsv workflows and recipes
     mlr-cookbook.md               # Miller for JSONL, DSL, stats, joins
+    enforcement-hook.md           # What the PreToolUse gate denies and lets through
+hooks/hooks.json                  # Registers the PreToolUse gate for the Bash tool
+scripts/
+  pre_bash_structured_warn.py     # The gate (Python, standard library only)
+  test_pre_bash_structured_warn.py  # Its behavioural tests
 ```
+
+The components and the hook's data flow are described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## License
 
