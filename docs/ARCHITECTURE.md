@@ -41,10 +41,10 @@ Detailed pattern libraries for each tool:
 
 **Processing.** The command is only analysed with regular expressions; the script never executes it.
 
-1. Parts that are data rather than commands are removed: bodies of quoted heredocs, and the values of `--body`, `--message`, `--notes`, `--description`, `--title`, `--comment`, `-m`, `-F` and `-f field=` options. The remainder is split into statements at `;`, newlines, `&&` and `||`; `echo` and `printf` statements are skipped.
+1. Parts that are data rather than commands are removed: bodies of quoted heredocs, and the values of `--body`, `--message`, `--notes`, `--description`, `--title`, `--comment`, `-m`, `-F` and `-f field=` options. For the two deny checks the remainder is split into statements at `;`, newlines, `&&` and `||`, and `echo` and `printf` statements are skipped.
 2. **Serializer rewrite → deny.** A statement that writes a structured file back through a serializer (`yq -i`/`--inplace`, `jq`/`yq`/`dasel … > file.json|jsonl|yaml|yml|toml`, `sponge` into such a file) is denied, unless the command contains `DATA_TOOLS_REWRITE_OK=1`.
 3. **Field extraction → deny.** A statement that reads structured data (a `.json`, `.jsonl`, `.yaml`, `.yml`, `.toml`, `.xml`, `.csv` or `.tsv` file name, or a `gh`/`glab api` or `gh … --json` response that no `--jq`/`-q`/`jq`/`yq`/`dasel`/`mlr`/`qsv` has consumed yet) and extracts from it with a text tool (`grep -o`, `grep … | awk/cut/sed/head -1/tail -1`, `awk -F … {print`, `sed -n 's/…\1…/p'`) is denied. Count, presence and list greps (`-c`, `-q`, `-l`, `-L`) and a `grep -n` whose only downstream filter is `sed` pass.
-4. **Other text-tool use → warn once.** `grep`, `sed`, `awk`, `cat`, `head`, `tail` or `python -c` on a command that names a structured file produces an advisory message. Each distinct message is shown once per session.
+4. **Other text-tool use → warn once.** `grep`, `sed`, `awk`, `cat`, `head`, `tail` or `python -c` in a command that names a structured file anywhere produces an advisory message; this check reads the whole remainder, without splitting it into statements or skipping `echo`. Each distinct message is shown once per session.
 
 **Output.** A deny is a JSON object on stdout with `hookSpecificOutput.permissionDecision: "deny"` and a reason that names the tool to use instead; Claude Code does not run the command. A warning is a JSON object with `systemMessage` and `suppressOutput: true`; the command runs. Otherwise the script prints nothing. Every handled path exits 0.
 
