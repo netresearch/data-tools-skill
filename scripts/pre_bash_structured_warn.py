@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: Netresearch DTT GmbH
 """PreToolUse hook for Bash: keep text tools off structured-data files.
 
 The data-tools rule — use jq/yq/dasel/qsv/mlr instead of grep/sed/awk on
@@ -314,4 +316,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Fail open: any error ends with exit 0, see the module docstring.
+    try:
+        sys.exit(main())
+    except Exception:  # noqa: BLE001
+        sys.exit(0)

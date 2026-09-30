@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: Netresearch DTT GmbH
 """Cases for scripts/pre_bash_structured_warn.py — run it, read its verdict.
 
 Every case is a command shape that actually occurred in a session; the
 comments name what each one protects against.
 """
 
+import hashlib
 import json
 import os
 import subprocess
@@ -223,6 +226,18 @@ def run(cmd: str, session_id: str | None = None) -> tuple[str, bool, str]:
     return verdict, "systemMessage" in p.stdout, p.stdout
 
 
+def run_raw(payload_text: str) -> tuple[int, str]:
+    """Run the hook on a literal stdin text; return exit code and stdout."""
+    p = subprocess.run(
+        [sys.executable, HOOK],
+        input=payload_text,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return p.returncode, p.stdout
+
+
 def main() -> int:
     fails = 0
     sid = f"test-{uuid.uuid4()}"
@@ -281,16 +296,58 @@ def main() -> int:
             )
         # A session id carrying path separators must not steer the state file
         # out of the temp directory (SonarCloud: path injection).
-        run("cat a.json", "../../../../tmp/evil")
+        evil_sid = "../../../../tmp/evil"
+        run("cat a.json", evil_sid)
         escaped = os.path.exists("/tmp/evil") or os.path.exists(
             os.path.join(tempfile.gettempdir(), "..", "evil")
         )
+        # The state file must be named after the digest and sit in the temp
+        # directory itself; an unhashed id fails this even where the escaped
+        # write itself went nowhere.
+        digest = hashlib.sha256(evil_sid.encode("utf-8")).hexdigest()[:16]
+        in_tmp = os.path.isfile(
+            os.path.join(tempfile.gettempdir(), f"data-tools-hook-seen-{digest}.json")
+        )
+        escaped = escaped or not in_tmp
         ok = not escaped
         fails += 0 if ok else 1
         print(
             f"  {'OK  ' if ok else 'FEHL'} {'Pfad-Traversal in der Session-ID':44} "
             f"erwartet=False erhalten={escaped}"
         )
+
+        # Fail open: payloads of an unexpected shape and a state file with
+        # unexpected content end with exit 0 and no output, never a traceback.
+        bad_sid = f"{sid}-badstate"
+        bad_key = hashlib.sha256(bad_sid.encode("utf-8")).hexdigest()[:16]
+        with open(
+            os.path.join(tempfile.gettempdir(), f"data-tools-hook-seen-{bad_key}.json"),
+            "w",
+            encoding="utf-8",
+        ) as fh:
+            fh.write("[1]")
+        bad_state = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "cat a.json"},
+                "session_id": bad_sid,
+            }
+        )
+        for name, text in (
+            ("Payload ist eine Liste", "[]"),
+            (
+                "command ist keine Zeichenkette",
+                '{"tool_name": "Bash", "tool_input": {"command": 5}}',
+            ),
+            ("Zustandsdatei mit Zahlen", bad_state),
+        ):
+            got = run_raw(text)
+            ok = got == (0, "")
+            fails += 0 if ok else 1
+            print(
+                f"  {'OK  ' if ok else 'FEHL'} {'exit 0 ohne Ausgabe: ' + name:44} "
+                f"erwartet=(0, '') erhalten=({got[0]}, {len(got[1])} Zeichen)"
+            )
     finally:
         for stale in os.listdir(tempfile.gettempdir()):
             if stale.startswith("data-tools-hook-seen-"):
