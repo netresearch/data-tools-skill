@@ -78,7 +78,7 @@ The skill content flows one way: the agent framework reads `SKILL.md` and the re
 ## Design Decisions
 
 - **Documentation plus one guard**: the rule is taught by the skill content and enforced by the hook, which ships in the same plugin so installing the skill installs the enforcement (`references/enforcement-hook.md`).
-- **Fail open**: the hook exits 0 on input that is not JSON and when its state file cannot be read or written; a payload of an unexpected shape, or a state file holding JSON that is not a list, ends with exit 1, which Claude Code does not treat as a block. A broken hook therefore never blocks the shell. It guards against mistakes; it is not a security boundary.
+- **Fail open**: the hook exits 0 on input that is not JSON and when its state file cannot be read or written; a payload of an unexpected shape, or a state file whose JSON is not an iterable of hashable values (a number, `null`, a list of lists), ends with exit 1, which Claude Code does not treat as a block. A broken hook therefore never blocks the shell. It guards against mistakes; it is not a security boundary.
 - **Split licensing**: code under MIT, content under CC-BY-SA-4.0.
 - **Composer integration**: published as a PHP package for projects using the composer-agent-skill-plugin.
 
