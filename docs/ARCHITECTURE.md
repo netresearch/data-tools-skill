@@ -37,7 +37,7 @@ Detailed pattern libraries for each tool:
 
 `hooks/hooks.json` registers the hook for the `Bash` tool: Claude Code runs `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pre_bash_structured_warn.py` before each Bash call, with a timeout of 3 seconds. The script uses only the Python standard library.
 
-**Input.** The harness writes a JSON payload to the script's stdin. The script reads `tool_name`, `tool_input.command`, and `session_id` (or, when that is absent, the file name of `transcript_path`). Anything other than a Bash call with a non-empty command, or a payload that is not valid JSON, ends the script with exit 0 and no output.
+**Input.** The harness writes a JSON payload to the script's stdin. The script reads `tool_name`, `tool_input.command`, and `session_id` (or, when that is absent, the file name of `transcript_path`). Anything other than a Bash call with a non-empty command, or a payload that is not valid JSON, ends the script with exit 0 and no output. Valid JSON of an unexpected shape (not an object, a `tool_input` that is not an object, a command that is not a string) is not type-checked: the script then ends with a Python traceback and exit 1, which Claude Code treats as a non-blocking error, so the command still runs.
 
 **Processing.** The command is only analysed with regular expressions; the script never executes it.
 
@@ -46,7 +46,7 @@ Detailed pattern libraries for each tool:
 3. **Field extraction → deny.** A statement that reads structured data (a `.json`, `.jsonl`, `.yaml`, `.yml`, `.toml`, `.xml`, `.csv` or `.tsv` file name, or a `gh`/`glab api` or `gh … --json` response that no `--jq`/`-q`/`jq`/`yq`/`dasel`/`mlr`/`qsv` has consumed yet) and extracts from it with a text tool (`grep -o`, `grep … | awk/cut/sed/head -1/tail -1`, `awk -F … {print`, `sed -n 's/…\1…/p'`) is denied. Count, presence and list greps (`-c`, `-q`, `-l`, `-L`) and a `grep -n` whose only downstream filter is `sed` pass.
 4. **Other text-tool use → warn once.** `grep`, `sed`, `awk`, `cat`, `head`, `tail` or `python -c` in a command that names a structured file anywhere produces an advisory message; this check reads the whole remainder, without splitting it into statements or skipping `echo`. Each distinct message is shown once per session.
 
-**Output.** A deny is a JSON object on stdout with `hookSpecificOutput.permissionDecision: "deny"` and a reason that names the tool to use instead; Claude Code does not run the command. A warning is a JSON object with `systemMessage` and `suppressOutput: true`; the command runs. Otherwise the script prints nothing. Every handled path exits 0.
+**Output.** A deny is a JSON object on stdout with `hookSpecificOutput.permissionDecision: "deny"` and a reason that names the tool to use instead; Claude Code does not run the command. A warning is a JSON object with `systemMessage` and `suppressOutput: true`; the command runs. Otherwise the script prints nothing. Every handled path exits 0; the unhandled payload shapes under **Input** exit 1.
 
 **State.** For the once-per-session warnings the script keeps a JSON list of hashes of the messages already shown in `data-tools-hook-seen-<first 16 hex of SHA-256(session id)>.json` in the system temp directory (`tempfile.gettempdir()`). Hashing the session id keeps the file name inside that directory whatever the payload contains. When there is no session id, or the file cannot be read or written, every warning is shown. Denies are never deduplicated.
 
@@ -78,7 +78,7 @@ The skill content flows one way: the agent framework reads `SKILL.md` and the re
 ## Design Decisions
 
 - **Documentation plus one guard**: the rule is taught by the skill content and enforced by the hook, which ships in the same plugin so installing the skill installs the enforcement (`references/enforcement-hook.md`).
-- **Fail open**: the hook exits 0 on malformed input and when its state file is unusable, so a broken hook never blocks the shell. It guards against mistakes; it is not a security boundary.
+- **Fail open**: the hook exits 0 on input that is not JSON and when its state file cannot be read or written; a payload of an unexpected shape, or a state file holding JSON that is not a list, ends with exit 1, which Claude Code does not treat as a block. A broken hook therefore never blocks the shell. It guards against mistakes; it is not a security boundary.
 - **Split licensing**: code under MIT, content under CC-BY-SA-4.0.
 - **Composer integration**: published as a PHP package for projects using the composer-agent-skill-plugin.
 
