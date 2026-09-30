@@ -7,6 +7,7 @@ Every case is a command shape that actually occurred in a session; the
 comments name what each one protects against.
 """
 
+import hashlib
 import json
 import os
 import subprocess
@@ -283,10 +284,19 @@ def main() -> int:
             )
         # A session id carrying path separators must not steer the state file
         # out of the temp directory (SonarCloud: path injection).
-        run("cat a.json", "../../../../tmp/evil")
+        evil_sid = "../../../../tmp/evil"
+        run("cat a.json", evil_sid)
         escaped = os.path.exists("/tmp/evil") or os.path.exists(
             os.path.join(tempfile.gettempdir(), "..", "evil")
         )
+        # The state file must be named after the digest and sit in the temp
+        # directory itself; an unhashed id fails this even where the escaped
+        # write itself went nowhere.
+        digest = hashlib.sha256(evil_sid.encode("utf-8")).hexdigest()[:16]
+        in_tmp = os.path.isfile(
+            os.path.join(tempfile.gettempdir(), f"data-tools-hook-seen-{digest}.json")
+        )
+        escaped = escaped or not in_tmp
         ok = not escaped
         fails += 0 if ok else 1
         print(
