@@ -111,7 +111,7 @@ The components and the hook's data flow are described in [docs/ARCHITECTURE.md](
 
 ## Contributing
 
-Contributions follow the [Netresearch contributing guide](https://github.com/netresearch/.github/blob/main/CONTRIBUTING.md). Install the local hooks once with `pre-commit install --install-hooks`; they run the same linters as the Skill Validation workflow.
+Contributions follow the [Netresearch contributing guide](https://github.com/netresearch/.github/blob/main/CONTRIBUTING.md). `pre-commit run --all-files` runs the same linters as the Skill Validation workflow locally. `pre-commit install --install-hooks` installs them as a commit hook, but pre-commit refuses while `core.hooksPath` is set, which `.envrc` does (it points git at `Build/hooks`); direnv users run the linters by hand instead.
 
 ### Tests
 
