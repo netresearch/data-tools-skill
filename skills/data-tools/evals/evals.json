@@ -333,6 +333,7 @@
       "expected_output": "Runs qsv frequency on a copy outside reports/ (or removes findings.stats.csv* afterwards) and lists the directory before declaring the package complete.",
       "files": [],
       "assertions": [
+        "Uses qsv frequency on column 3 (--select 3 or -s 3) for the distribution",
         "Does not leave findings.stats.csv, findings.stats.csv.data.jsonl or findings.stats.csv.json in reports/",
         "Runs qsv on a copy outside the package directory, or deletes the files it created",
         "Lists the directory content before stating what the package contains"
