@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 HOOK = os.path.join(
@@ -238,10 +239,63 @@ def run_raw(payload_text: str) -> tuple[int, str]:
     return p.returncode, p.stdout
 
 
+HOOK_TIMEOUT = 3  # seconds, hooks/hooks.json
+# (name, expected verdict, command): long backslash runs inside and after a
+# quoted option value. The hook must answer within its timeout, and the answer
+# must still be the right one.
+TIMED_CASES = [
+    (
+        "Extraktion, dann offener --body mit 5000 Backslashes",
+        "DENY",
+        'grep -oE \'"a": "[^"]+"\' f.json; gh pr create --body "' + "\\" * 5000,
+    ),
+    (
+        "-m '… ohne schliessendes Anfuehrungszeichen",
+        "durch",
+        "git commit -m '" + "\\" * 5000,
+    ),
+    (
+        "-f body='… ohne schliessendes Anfuehrungszeichen",
+        "durch",
+        "gh api repos/o/r/issues -f body='" + "\\" * 5000,
+    ),
+]
+
+
+def run_timed(cmd: str) -> tuple[str, float]:
+    """Verdict and wall time; TIMEOUT when the hook outlives its timeout."""
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}})
+    start = time.monotonic()
+    try:
+        p = subprocess.run(
+            [sys.executable, HOOK],
+            input=payload,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=HOOK_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return "TIMEOUT", time.monotonic() - start
+    verdict = "DENY" if '"deny"' in p.stdout else "durch"
+    return verdict, time.monotonic() - start
+
+
 def main() -> int:
     fails = 0
     sid = f"test-{uuid.uuid4()}"
     try:
+        # The hook runs on every Bash call; past its timeout the call goes
+        # through unchecked. One second leaves room for interpreter start.
+        for name, want, cmd in TIMED_CASES:
+            got, took = run_timed(cmd)
+            ok = got == want and took < 1.0
+            fails += 0 if ok else 1
+            print(
+                f"  {'OK  ' if ok else 'FEHL'} {name:44} erwartet={want:5} "
+                f"erhalten={got} in {took:.2f}s"
+            )
+
         for name, want, cmd in VERDICT_CASES:
             got, _, _ = run(cmd)
             ok = got == want

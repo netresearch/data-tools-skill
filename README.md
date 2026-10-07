@@ -121,7 +121,7 @@ The behavioural tests of the PreToolUse hook need only Python 3.10 or later:
 python3 scripts/test_pre_bash_structured_warn.py
 ```
 
-- The script runs `scripts/pre_bash_structured_warn.py` as a subprocess with a hook payload per case and compares the result. It covers the deny cases (serializer rewrites, field extraction from files and from `gh`/`glab` API responses), the commands that must pass (count and presence greps, cosmetic `grep -n | sed`, prose in PR bodies, commit messages and quoted heredocs, output already parsed by `--jq`), the one-time warnings and their once-per-session deduplication, that a deny is never deduplicated, and that a session id cannot steer the state file out of the temp directory.
+- The script runs `scripts/pre_bash_structured_warn.py` as a subprocess with a hook payload per case and compares the result. It covers the deny cases (serializer rewrites, field extraction from files and from `gh`/`glab` API responses), the commands that must pass (count and presence greps, cosmetic `grep -n | sed`, prose in PR bodies, commit messages and quoted heredocs, output already parsed by `--jq`), the one-time warnings and their once-per-session deduplication, that a deny is never deduplicated, that a session id cannot steer the state file out of the temp directory, and that the hook answers within its timeout on long backslash runs.
 - Each case prints one line: `OK` or `FEHL`, the case name, the expected (`erwartet`) and the actual (`erhalten`) result. The last line is `---- Fehlschlaege: N`, the number of failing cases; the script exits 1 when N is not 0.
 - When it finishes, the script deletes every `data-tools-hook-seen-*` file in the system temp directory, so warnings already shown in a running session appear once more.
 
