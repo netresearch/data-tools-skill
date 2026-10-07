@@ -3,8 +3,8 @@
 # SPDX-FileCopyrightText: Netresearch DTT GmbH
 """Cases for scripts/pre_bash_structured_warn.py — run it, read its verdict.
 
-Every case is a command shape that actually occurred in a session; the
-comments name what each one protects against.
+Most cases are command shapes that actually occurred in a session; the
+constructed ones say so. The comments name what each one protects against.
 """
 
 import hashlib
@@ -73,6 +73,20 @@ VERDICT_CASES = [
     ),
     ("awk -F print aus .yaml", "DENY", "awk -F: '{print $2}' config.yaml"),
     ("grep | cut aus .csv", "DENY", "grep foo data.csv | cut -d, -f2"),
+    # Constructed to pin the scans that replaced the extraction regex: a sed
+    # substitution prints a field only through a back-reference, and grep feeds
+    # cut only through a pipe, not through `&`.
+    (
+        "sed -n 's/…/\\1/p' aus .json",
+        "DENY",
+        """sed -n 's/.*"name": "\\(.*\\)".*/\\1/p' pkg.json""",
+    ),
+    ("sed -n ohne Rueckverweis geht durch", "durch", "sed -n 's/a/b/p' f.json"),
+    (
+        "grep & cut ist keine Pipe",
+        "durch",
+        "grep foo data.json & cut -d, -f2 notes.txt",
+    ),
     # Comment/presence greps — a structured parser cannot see comments at all.
     ("grep -c auf .json", "durch", "grep -c 'GITLEAKS' /tmp/x.json"),
     ("grep -q auf .yaml", "durch", "grep -q 'TODO' ci.yaml"),
@@ -258,6 +272,63 @@ TIMED_CASES = [
         "-f body='… ohne schliessendes Anfuehrungszeichen",
         "durch",
         "gh api repos/o/r/issues -f body='" + "\\" * 5000,
+    ),
+]
+
+# Repeated words in one long command. Each pattern that put `[^|;&]*` between
+# two words, and the quoted-heredoc pattern, rescanned the rest of the command
+# from every occurrence of its first word: 11 KB of `sed -n` after a .json
+# name took 8-11 s. At 100 KB that is minutes, so these cases fail by TIMEOUT
+# if any of those scans turns quadratic again.
+LONG = 100_000
+
+
+def repeated(word: str, size: int = LONG) -> str:
+    return (word * (size // len(word) + 1))[:size]
+
+
+TIMED_CASES += [
+    ("100 KB sed -n nach .json", "durch", "cat a.json " + repeated("sed -n ")),
+    ("100 KB awk -F nach .json", "durch", "cat a.json " + repeated("awk -F ")),
+    ("100 KB grep -a nach .json", "durch", "cat a.json " + repeated("grep -a ")),
+    # The -n (locate) and -c/-q/-l (count/test) exemptions are judged only for
+    # a statement that extracts, so these end in `| cut`.
+    (
+        "100 KB -nnn…5 vor | cut",
+        "DENY",
+        "grep -" + repeated("n") + "5 a.json | cut -f1",
+    ),
+    (
+        "100 KB -ccc…5 vor | cut",
+        "DENY",
+        "grep -" + repeated("c") + "5 a.json | cut -f1",
+    ),
+    (
+        "100 KB Optionsbuchstaben ohne Wortgrenze",
+        "durch",
+        "cat a.json grep -" + repeated("o") + "1",
+    ),
+    ("100 KB gh x", "durch", repeated("gh x ")),
+    ("100 KB gh api", "durch", repeated("gh api ")),
+    ("100 KB gh api x", "durch", repeated("gh api x ")),
+    ("100 KB yq", "durch", repeated("yq ")),
+    ("100 KB jq >", "durch", repeated("jq > ")),
+    ("100 KB offene Heredocs", "durch", repeated("cat <<'A' ")),
+    (
+        "100 KB Heredocs mit verschiedenen Begrenzern",
+        "durch",
+        "".join(f"cat <<'D{i}' " for i in range(LONG // 12)),
+    ),
+    # …and the verdict at the end of such a command is still the right one.
+    (
+        "100 KB sed -n, dann echte Extraktion",
+        "DENY",
+        "cat a.json " + repeated("sed -n ") + '\ngrep -oE \'"a": "[^"]+"\' f.json',
+    ),
+    (
+        "100 KB jq >, dann yq -i",
+        "DENY",
+        repeated("jq > ") + "\nyq -i '.a = 1' c.yaml",
     ),
 ]
 
