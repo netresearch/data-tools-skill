@@ -84,25 +84,27 @@ QUOTED_HEREDOC = re.compile(r"<<-?\s*(['\"])(\w+)\1.*?^\2$", re.DOTALL | re.MULT
 # Values of --body/--message/-m/-f body= and friends are therefore removed
 # before the scan; an option that names a FILE (--body-file) is untouched,
 # because a path is not prose.
-def _quoted(group: str) -> str:
-    """A single- or double-quoted run, closing on its own opening quote.
+def _quoted() -> str:
+    """A single- or double-quoted shell word, quoted the way bash quotes it.
 
-    The quote is a NAMED group so two of these can live in one pattern set;
-    with plain `(['\"])…\\1` the second copy's backreference silently points at
-    the first copy's group, never matches, and the whole branch is dead.
+    Single quotes allow no escape, so the run ends at the next `'`. Inside
+    double quotes a backslash escapes the next character. Each alternative
+    starts on a character no other alternative accepts, so the engine has one
+    way to read every input and the time to match a quoted value grows
+    linearly with its length.
     """
-    return rf"(?P<{group}>['\"])(?:\\.|(?!(?P={group})).)*(?P={group})"
+    return r"""(?:'[^']*'|"(?:[^"\\]|\\.)*")"""
 
 
 OPTION_VALUES = (
     # --body "…" / --message='…' / -m "…" / -F '…'
     re.compile(
         r"(?:--(?:body|message|notes|description|title|comment)(?!-file)"
-        r"|(?<!\w)-[mF](?!\w))[= ]\s*" + _quoted("q"),
+        r"|(?<!\w)-[mF](?!\w))[= ]\s*" + _quoted(),
         re.DOTALL,
     ),
     # gh/glab field form: -f body='…' — the '=' belongs to the field name.
-    re.compile(r"(?<!\w)-f\s+\w+=\s*" + _quoted("q"), re.DOTALL),
+    re.compile(r"(?<!\w)-f\s+\w+=\s*" + _quoted(), re.DOTALL),
 )
 # `echo '…'` / `printf '…'` write text; they never extract a field.
 ECHOES_TEXT = re.compile(r"^\s*(echo|printf)\b")
