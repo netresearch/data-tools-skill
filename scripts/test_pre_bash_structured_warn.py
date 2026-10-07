@@ -82,6 +82,13 @@ VERDICT_CASES = [
         """sed -n 's/.*"name": "\\(.*\\)".*/\\1/p' pkg.json""",
     ),
     ("sed -n ohne Rueckverweis geht durch", "durch", "sed -n 's/a/b/p' f.json"),
+    # A grep inside an option cluster counts as a grep of its own, as it did
+    # for the regex: `-l` after it is a list grep, which only warns.
+    (
+        "grep in einem Optionsbuendel vor -l",
+        "durch",
+        "grep -egrep -l x f.json | head -1",
+    ),
     (
         "grep & cut ist keine Pipe",
         "durch",
@@ -318,6 +325,16 @@ TIMED_CASES += [
         "100 KB Heredocs mit verschiedenen Begrenzern",
         "durch",
         "".join(f"cat <<'D{i}' " for i in range(LONG // 12)),
+    ),
+    (
+        "2 x 100 KB sed -n s/ in vielen Stufen",
+        "durch",
+        "cat f.json " + repeated("|sed -n s/") + repeated("\\x"),
+    ),
+    (
+        "100 KB grep in Optionsbuendeln vor | cut",
+        "DENY",
+        "grep " + repeated("-xgrep ") + " a.json | cut -f1",
     ),
     # …and the verdict at the end of such a command is still the right one.
     (

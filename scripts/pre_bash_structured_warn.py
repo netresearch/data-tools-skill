@@ -75,7 +75,7 @@ BACKREF, PRINT_FLAG = re.compile(r"\\\d"), re.compile(r"p")
 # instead of letting a pattern backtrack over them.
 OPTION_LETTERS = re.compile(r"-([a-zA-Z]*)")
 SPACED_OPTION = re.compile(r"\s-([a-zA-Z]*)")
-GREP_FIRST_OPTION = re.compile(r"grep\b\s+-([a-zA-Z]*)")
+FIRST_OPTION = re.compile(r"\s+-([a-zA-Z]*)")
 GREP_ARGS = re.compile(r"grep\b\s+")
 WHITESPACE = re.compile(r"\s+")
 WORD_CHAR = re.compile(r"\w")
@@ -187,9 +187,18 @@ def _has_option_letter(text: str, start: int, end: int, letters: str) -> bool:
 
 
 def _counts_or_tests(stmt: str) -> bool:
-    """grep with -c, -q, -l or -L as its first option cluster."""
-    for m in GREP_FIRST_OPTION.finditer(stmt):
-        if any(c in m.group(1) for c in "cqlL") and _boundary_after(stmt, m.end()):
+    """grep with -c, -q, -l or -L as its first option cluster.
+
+    Every `grep` is tried, also one inside an option cluster (`-egrep -l`),
+    as the regex `grep\\b\\s+-[a-zA-Z]*[cqlL][a-zA-Z]*\\b` did.
+    """
+    for g in GREP.finditer(stmt):
+        m = FIRST_OPTION.match(stmt, g.end())
+        if (
+            m
+            and any(c in m.group(1) for c in "cqlL")
+            and _boundary_after(stmt, m.end())
+        ):
             return True
     return False
 
@@ -201,7 +210,12 @@ def _locates(stmt: str) -> bool:
     options are read one cluster at a time instead of letting the nested
     repetition backtrack over them.
     """
+    scanned_to = -1
     for g in GREP_ARGS.finditer(stmt):
+        # A grep inside an option cluster that an earlier grep already read
+        # (`grep -xgrep -n`) sees the rest of the same run, which held no -n.
+        if g.start() < scanned_to:
+            continue
         pos = g.end()
         while True:
             opt = OPTION_LETTERS.match(stmt, pos)
@@ -213,11 +227,22 @@ def _locates(stmt: str) -> bool:
             if gap is None:
                 break
             pos = gap.end()
+        scanned_to = pos
     return False
+
+
+def _last_backref_before_print(stmt: str) -> int:
+    """Start of the last `\\<digit>` in stmt that a later `p` follows, or -1."""
+    last_p = stmt.rfind("p")
+    best = -1
+    for m in BACKREF.finditer(stmt, 0, max(last_p, 0)):
+        best = m.start()
+    return best
 
 
 def _extracts(stmt: str) -> bool:
     """True when the statement extracts a field with grep, awk or sed."""
+    backref = None  # computed on the first sed -n … s/ stage, then reused
     for start, end in _stages(stmt):
         # grep … | awk/cut/sed/head -1/tail -1
         if (
@@ -236,8 +261,11 @@ def _extracts(stmt: str) -> bool:
             return True
         # sed -n 's/…/\1/p': the substitution itself may contain | and &
         pos = _in_order(stmt, start, end, SED, SED_N, SED_S)
-        if pos >= 0 and _in_order(stmt, pos, len(stmt), BACKREF, PRINT_FLAG) >= 0:
-            return True
+        if pos >= 0:
+            if backref is None:
+                backref = _last_backref_before_print(stmt)
+            if backref >= pos:
+                return True
     return False
 
 
