@@ -26,6 +26,7 @@ Two levels, because the two cases differ in how certain the mistake is:
 Exit code is always 0; a hook that crashes must never block a shell.
 """
 
+import bisect
 import hashlib
 import json
 import os
@@ -39,32 +40,56 @@ STRUCT = r"\.(json|jsonl|ya?ml|toml|xml|csv|tsv)(\b|['\"])"
 # `gh pr list --json …`. The path in `…/contents/pkg.json` happens to match
 # STRUCT, so those were covered by accident while the list endpoints — the ones
 # fleet work uses — were not, and field extraction from them stayed silent.
-JSON_API = re.compile(r"\b(?:gh|glab)\s+api\b|\bgh\s+\w+[^|;&]*\s--json\s")
+JSON_API = re.compile(r"\b(?:gh|glab)\s+api\b")
+GH_COMMAND = re.compile(r"\bgh\s+\w+")
+JSON_FLAG = re.compile(r"\s--json\s")
 
 # …unless a parser already consumed it. `gh api … --jq '.x' | grep -oE …` greps
 # jq's OUTPUT, which is text by then and legitimately grepped. The `-q` short
 # form is matched only between `gh api` and the next pipe, because a bare `-q`
 # elsewhere is `grep -q` and would exempt every case this hook exists for.
-API_PARSED = re.compile(
-    r"\b(?:gh|glab)\s+api\b[^|;&]*\s(?:--jq|-q)\s"
-    r"|\|\s*(?:jq|yq|dasel|mlr|qsv)\b"
-)
+API_QUERY_FLAG = re.compile(r"\s(?:--jq|-q)\s")
+PIPED_TO_PARSER = re.compile(r"\|\s*(?:jq|yq|dasel|mlr|qsv)\b")
 
-# Field extraction from a structured file — the unambiguous half.
-EXTRACT = (
-    r"grep\b[^|;&]*\|\s*(awk|cut|sed|head\s+-1|tail\s+-1)\b"  # grep … | awk/cut/sed
-    r"|grep\b[^|;&]*\s-[a-zA-Z]*o[a-zA-Z]*\b"  # grep -o / -oE / -oP
-    r"|awk\b[^|;&]*-F[^|;&]*\{\s*print"  # awk -F … {print $N}
-    r"|sed\b[^|;&]*-n[^|;&]*s/.*\\\d.*/?p"  # sed -n 's/…/\1/p'
+# Field extraction from a structured file — the unambiguous half:
+#   grep … | awk/cut/sed/head -1/tail -1
+#   grep -o / -oE / -oP
+#   awk -F … {print $N}
+#   sed -n 's/…/\1/p'
+# Each is checked by the scans in _extracts() below. Written as one regex with
+# `[^|;&]*` between the words, every occurrence of the first word started a
+# scan to the end of the stage, which made a long command of repeated words
+# quadratic: 11 KB of `sed -n` took 8-11 s, past the hook's 3 s timeout, and a
+# command the hook cannot judge in time runs unchecked.
+GREP = re.compile(r"grep\b")
+TO_FIELD_FILTER = re.compile(r"\s*(?:awk|cut|sed|head\s+-1|tail\s+-1)\b")
+AWK, AWK_FS, AWK_PRINT = (
+    re.compile(r"awk\b"),
+    re.compile(r"-F"),
+    re.compile(r"\{\s*print"),
 )
-COUNT_OR_TEST = r"grep\b\s+-[a-zA-Z]*[cqlL][a-zA-Z]*\b"
+SED, SED_N, SED_S = re.compile(r"sed\b"), re.compile(r"-n"), re.compile(r"s/")
+BACKREF, PRINT_FLAG = re.compile(r"\\\d"), re.compile(r"p")
+# A short option cluster: `-` and its letters. What follows the letters decides
+# whether a regex `\b` would match there, so the letters are read in one pass
+# instead of letting a pattern backtrack over them.
+OPTION_LETTERS = re.compile(r"-([a-zA-Z]*)")
+SPACED_OPTION = re.compile(r"\s-([a-zA-Z]*)")
+FIRST_OPTION = re.compile(r"\s+-([a-zA-Z]*)")
+GREP_ARGS = re.compile(r"grep\b\s+")
+WHITESPACE = re.compile(r"\s+")
+WORD_CHAR = re.compile(r"\w")
 
 # `grep -n` locates a line; its `file:line:text` output is not a field value.
 # Piping that to `sed` is almost always cosmetic (indenting, trimming a prefix
 # for display), so it is exempt — but only when `sed` is the ONLY downstream
 # filter. `grep -n … | cut -d: -f2` is still extraction and stays denied.
-LOCATE = r"grep\b\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*n[a-zA-Z]*\b"
 NON_COSMETIC_SINK = r"\|\s*(awk|cut|head\s+-1|tail\s+-1)\b"
+
+# What `[^|;&]*` could not cross in the patterns these scans replace: the
+# stages of a pipeline, and the parts around `;` and a single `&`.
+STAGE_BREAK = re.compile(r"[|;&]")
+REDIRECT_OR_STAGE_BREAK = re.compile(r"[|;&>]")
 
 # Statement boundaries only — a pipeline stays whole, because `grep … | sed` is
 # one extraction. Splitting here scopes the structured-filename test to the
@@ -75,7 +100,10 @@ STATEMENT_SPLIT = re.compile(r";|\n|&&|\|\|")
 # A quoted heredoc body is literal data — a file being written, a payload being
 # piped. Scanning it for commands flags test fixtures and documentation that
 # merely *contain* a pattern. Unquoted heredocs still expand and stay in.
-QUOTED_HEREDOC = re.compile(r"<<-?\s*(['\"])(\w+)\1.*?^\2$", re.DOTALL | re.MULTILINE)
+# As a regex (`<<-?\s*(['"])(\w+)\1.*?^\2$`) every opener without its closing
+# line scanned to the end of the command, so many openers took quadratic
+# time; _strip_quoted_heredocs() looks the closing line up in an index instead.
+HEREDOC_OPENER = re.compile(r"<<-?\s*(['\"])(\w+)\1")
 
 
 # Prose passed as an OPTION VALUE is text about commands, not a command: a PR
@@ -115,14 +143,189 @@ ADVICE = (
 )
 
 
+def _stages(text: str, breaks: re.Pattern = STAGE_BREAK):
+    """Yield (start, end) of each run of text between two break characters."""
+    start = 0
+    for m in breaks.finditer(text):
+        yield start, m.start()
+        start = m.end()
+    yield start, len(text)
+
+
+def _in_order(text: str, start: int, end: int, *patterns: re.Pattern) -> int:
+    """Offset after the patterns matched one after another in text[start:end].
+
+    Each pattern is searched from where the previous match ended, so the
+    patterns are found in order and the text is read once. Returns -1 when
+    one of them is missing. Searching with pos/endpos keeps lookbehinds and
+    word boundaries looking at the characters around the range, as they did
+    when the same patterns were part of one regex over the whole text.
+    """
+    pos = start
+    for pattern in patterns:
+        m = pattern.search(text, pos, end)
+        if m is None:
+            return -1
+        pos = m.end()
+    return pos
+
+
+def _boundary_after(text: str, pos: int) -> bool:
+    r"""True where a regex `\b` after a run of letters ending at pos matches."""
+    return pos >= len(text) or not WORD_CHAR.match(text, pos)
+
+
+def _has_option_letter(text: str, start: int, end: int, letters: str) -> bool:
+    r"""True when a whitespace-preceded `-xyz` in text[start:end] holds one of letters.
+
+    Same verdict as `\s-[a-zA-Z]*[letters][a-zA-Z]*\b` over that range.
+    """
+    for m in SPACED_OPTION.finditer(text, start, end):
+        if any(c in m.group(1) for c in letters) and _boundary_after(text, m.end()):
+            return True
+    return False
+
+
+def _counts_or_tests(stmt: str) -> bool:
+    """grep with -c, -q, -l or -L as its first option cluster.
+
+    Every `grep` is tried, also one inside an option cluster (`-egrep -l`),
+    as the regex `grep\\b\\s+-[a-zA-Z]*[cqlL][a-zA-Z]*\\b` did.
+    """
+    for g in GREP.finditer(stmt):
+        m = FIRST_OPTION.match(stmt, g.end())
+        if (
+            m
+            and any(c in m.group(1) for c in "cqlL")
+            and _boundary_after(stmt, m.end())
+        ):
+            return True
+    return False
+
+
+def _locates(stmt: str) -> bool:
+    r"""grep whose leading option clusters include one with -n.
+
+    Same verdict as `grep\b\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*n[a-zA-Z]*\b`: the
+    options are read one cluster at a time instead of letting the nested
+    repetition backtrack over them.
+    """
+    scanned_to = -1
+    for g in GREP_ARGS.finditer(stmt):
+        # A grep inside an option cluster that an earlier grep already read
+        # (`grep -xgrep -n`) sees the rest of the same run, which held no -n.
+        if g.start() < scanned_to:
+            continue
+        pos = g.end()
+        while True:
+            opt = OPTION_LETTERS.match(stmt, pos)
+            if opt is None:
+                break
+            if "n" in opt.group(1) and _boundary_after(stmt, opt.end()):
+                return True
+            gap = WHITESPACE.match(stmt, opt.end())
+            if gap is None:
+                break
+            pos = gap.end()
+        scanned_to = pos
+    return False
+
+
+def _last_backref_before_print(stmt: str) -> int:
+    """Start of the last `\\<digit>` in stmt that a later `p` follows, or -1."""
+    last_p = stmt.rfind("p")
+    best = -1
+    for m in BACKREF.finditer(stmt, 0, max(last_p, 0)):
+        best = m.start()
+    return best
+
+
+def _extracts(stmt: str) -> bool:
+    """True when the statement extracts a field with grep, awk or sed."""
+    backref = None  # computed on the first sed -n … s/ stage, then reused
+    for start, end in _stages(stmt):
+        # grep … | awk/cut/sed/head -1/tail -1
+        if (
+            end < len(stmt)
+            and stmt[end] == "|"
+            and GREP.search(stmt, start, end)
+            and TO_FIELD_FILTER.match(stmt, end + 1)
+        ):
+            return True
+        # grep -o / -oE / -oP
+        pos = _in_order(stmt, start, end, GREP)
+        if pos >= 0 and _has_option_letter(stmt, pos, end, "o"):
+            return True
+        # awk -F … {print $N}
+        if _in_order(stmt, start, end, AWK, AWK_FS, AWK_PRINT) >= 0:
+            return True
+        # sed -n 's/…/\1/p': the substitution itself may contain | and &
+        pos = _in_order(stmt, start, end, SED, SED_N, SED_S)
+        if pos >= 0:
+            if backref is None:
+                backref = _last_backref_before_print(stmt)
+            if backref >= pos:
+                return True
+    return False
+
+
+def _calls_json_api(stmt: str) -> bool:
+    """`gh api`/`glab api`, or a gh subcommand with --json in the same stage."""
+    if JSON_API.search(stmt):
+        return True
+    return any(
+        _in_order(stmt, start, end, GH_COMMAND, JSON_FLAG) >= 0
+        for start, end in _stages(stmt)
+    )
+
+
+def _api_parsed(stmt: str) -> bool:
+    """A parser consumed the API answer: --jq/-q of gh api, or a pipe into one."""
+    if PIPED_TO_PARSER.search(stmt):
+        return True
+    return any(
+        _in_order(stmt, start, end, JSON_API, API_QUERY_FLAG) >= 0
+        for start, end in _stages(stmt)
+    )
+
+
+def _strip_quoted_heredocs(cmd: str) -> str:
+    """Replace each quoted heredoc, opener to closing line, with one space.
+
+    The closing line is the first line after the opener that consists of the
+    delimiter alone; an opener without one is left in place.
+    """
+    lines: dict[str, list[tuple[int, int]]] = {}
+    offset = 0
+    for line in cmd.split("\n"):
+        lines.setdefault(line, []).append((offset, offset + len(line)))
+        offset += len(line) + 1
+    out: list[str] = []
+    copied = pos = 0
+    while True:
+        m = HEREDOC_OPENER.search(cmd, pos)
+        if m is None:
+            break
+        candidates = lines.get(m.group(2), [])
+        i = bisect.bisect_left(candidates, (m.end(),))
+        if i == len(candidates):
+            pos = m.start() + 1
+            continue
+        out.append(cmd[copied : m.start()])
+        out.append(" ")
+        copied = pos = candidates[i][1]
+    out.append(cmd[copied:])
+    return "".join(out)
+
+
 def is_cosmetic_locate(cmd: str) -> bool:
     """True for a line-locating grep whose only downstream filter is sed."""
-    return bool(re.search(LOCATE, cmd)) and not re.search(NON_COSMETIC_SINK, cmd)
+    return _locates(cmd) and not re.search(NON_COSMETIC_SINK, cmd)
 
 
 def _executable_text(cmd: str) -> str:
     """Strip the parts of a command line that are data rather than instructions."""
-    cmd = QUOTED_HEREDOC.sub(" ", cmd or "")
+    cmd = _strip_quoted_heredocs(cmd or "")
     for pattern in OPTION_VALUES:
         cmd = pattern.sub(" ", cmd)
     return cmd
@@ -138,7 +341,7 @@ def reads_structured(stmt: str) -> bool:
     """
     if re.search(STRUCT, stmt, re.IGNORECASE):
         return True
-    return bool(JSON_API.search(stmt)) and not API_PARSED.search(stmt)
+    return _calls_json_api(stmt) and not _api_parsed(stmt)
 
 
 def extracts_from_structured(cmd: str) -> bool:
@@ -148,9 +351,9 @@ def extracts_from_structured(cmd: str) -> bool:
             continue
         if not reads_structured(stmt):
             continue
-        if not re.search(EXTRACT, stmt):
+        if not _extracts(stmt):
             continue
-        if re.search(COUNT_OR_TEST, stmt) or is_cosmetic_locate(stmt):
+        if _counts_or_tests(stmt) or is_cosmetic_locate(stmt):
             continue
         return True
     return False
@@ -160,11 +363,16 @@ def extracts_from_structured(cmd: str) -> bool:
 # tool's own formatting — indentation, blank lines, key order, quoting — so a three-line
 # change lands as a full-file diff (`yq -i` stripped every blank line of a
 # .gitlab-ci.yml, 2026-08-28). Read with the parser, change the lines with an editor.
-REWRITES = re.compile(
-    r"(?<!-)\byq\b[^|;&>]*\s(?:-i|--inplace)\b"
-    r"|(?<!-)\b(?:jq|yq|dasel)\b[^|;&]*>\s*[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b"
-    r"|\bsponge\s+[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b",
-    re.IGNORECASE,
+# Matched by rewrites_structured() as three scans, for the same reason as the
+# extraction patterns: one regex with `[^|;&]*` was quadratic on repeated words.
+YQ = re.compile(r"(?<!-)\byq\b", re.IGNORECASE)
+INPLACE_FLAG = re.compile(r"\s(?:-i|--inplace)\b", re.IGNORECASE)
+SERIALIZER = re.compile(r"(?<!-)\b(?:jq|yq|dasel)\b", re.IGNORECASE)
+INTO_STRUCTURED_FILE = re.compile(
+    r">\s*[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b", re.IGNORECASE
+)
+SPONGE_INTO_STRUCTURED_FILE = re.compile(
+    r"\bsponge\s+[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b", re.IGNORECASE
 )
 REWRITE_ADVICE = (
     "Writing a structured file back through a serializer (yq -i, jq/yq > file, sponge) "
@@ -183,8 +391,14 @@ def rewrites_structured(cmd: str) -> bool:
     for stmt in STATEMENT_SPLIT.split(_executable_text(cmd)):
         if ECHOES_TEXT.match(stmt):
             continue
-        if REWRITES.search(stmt):
+        if SPONGE_INTO_STRUCTURED_FILE.search(stmt):
             return True
+        for start, end in _stages(stmt, REDIRECT_OR_STAGE_BREAK):
+            if _in_order(stmt, start, end, YQ, INPLACE_FLAG) >= 0:
+                return True
+        for start, end in _stages(stmt):
+            if _in_order(stmt, start, end, SERIALIZER, INTO_STRUCTURED_FILE) >= 0:
+                return True
     return False
 
 
