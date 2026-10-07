@@ -64,6 +64,8 @@ qsv search -s status "active" users.csv | qsv select name,email
 qsv join user_id orders.csv id users.csv
 ```
 
+`qsv index`, `stats` and `frequency` write files next to the input (`x.csv.idx`, `x.stats.csv*`). In a repository or a package directory, run them on a copy ([details](references/csv-processing.md#files-qsv-writes-next-to-the-input)).
+
 ### mlr -- JSONL / multi-format / DSL (in-place `-I`)
 
 ```bash

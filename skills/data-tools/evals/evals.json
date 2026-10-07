@@ -325,6 +325,18 @@
         "Uses --limit for top N results",
         "Pipes through qsv table for readable output"
       ]
+    },
+    {
+      "id": 26,
+      "eval_name": "qsv-cache-files-outside-the-package",
+      "prompt": "reports/ is the directory of a package that will be sent to a third party, and it holds findings.csv. Show the distribution of values in column 3 with qsv, then tell me what the package contains.",
+      "expected_output": "Runs qsv frequency on a copy outside reports/ (or removes findings.stats.csv* afterwards) and lists the directory before declaring the package complete.",
+      "files": [],
+      "assertions": [
+        "Does not leave findings.stats.csv, findings.stats.csv.data.jsonl or findings.stats.csv.json in reports/",
+        "Runs qsv on a copy outside the package directory, or deletes the files it created",
+        "Lists the directory content before stating what the package contains"
+      ]
     }
   ]
 }

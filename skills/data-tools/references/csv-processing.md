@@ -256,6 +256,17 @@ qsv count data.csv
 qsv slice data.csv --start 1000000 --len 100
 ```
 
+### Files qsv Writes Next to the Input
+
+Some qsv commands create files in the input's directory. Measured with qsv 24.0.0 on a copy of `x.csv`:
+
+- `qsv index x.csv` creates `x.csv.idx`.
+- `qsv stats x.csv` (also with `--everything`) creates `x.stats.csv`.
+- `qsv frequency -s 2 x.csv` creates `x.stats.csv`, `x.stats.csv.data.jsonl` and `x.stats.csv.json`.
+- `qsv headers`, `count`, `select`, `search` and `sort` create nothing.
+
+Only the commands listed here were measured. In a repository or in a directory that is shipped (a package, a release, a deliverable), run these commands on a copy outside it, or delete the files afterwards. `git status` lists them as untracked, and an archive built from the directory includes them. List the directory before packaging.
+
 ### Splitting Large Files
 
 ```bash
