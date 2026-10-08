@@ -186,10 +186,18 @@ set -eo pipefail
 X=$(jq -r '.baseBranches[]' renovate.json 2>/dev/null | paste -sd '|')
 echo "branches: $X"        # never reached
 
-# GOOD — `[]?` yields nothing and exits 0 for a missing or null key;
-# `|| true` covers the file-not-found case, which `?` does not
-X=$(jq -r '.baseBranches[]?' renovate.json 2>/dev/null | paste -sd '|' || true)
+# GOOD — `[]?` yields nothing and exits 0 for a missing or null key.
+# The missing file is checked explicitly, because `?` does not cover it;
+# any other jq failure (a parse error in the file) still fails, with its message.
+X=""
+if [ -f renovate.json ]; then
+  X=$(jq -r '.baseBranches[]?' renovate.json | paste -sd '|')
+fi
 ```
+
+Do not replace the file check with `|| true` or `2>/dev/null`: both also
+swallow a parse error in an existing file, which is the silent failure this
+section is about.
 
 Measured with jq 1.8.2: `.key[]` on a missing key exits 5, `.key[]?` exits 0 with
 no output, and a missing file exits 2. When a CI job reports `exit code 5` with
