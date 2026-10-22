@@ -338,6 +338,20 @@
         "Runs qsv on a copy outside the package directory, or deletes the files it created",
         "Lists the directory content before stating what the package contains"
       ]
+    },
+    {
+      "id": 27,
+      "eval_name": "jq-large-program-off-argv",
+      "prompt": "status.sh runs `jq -n --argjson g \"$answer\" --argjson r \"$rules\" '<a 90 KB jq program>'`. On Windows under Git Bash it dies with \"Argument list too long\" before jq starts; on Linux it works. Fix it without changing what the program computes.",
+      "expected_output": "Moves the program into a .jq file read with -f and the payloads off argv (stdin with [inputs] and a count check, or files), names the 32767-character Windows command-line limit, and does not use jq -f -.",
+      "files": [],
+      "assertions": [
+        "Names the Windows limit of 32767 characters for the whole command line",
+        "Moves the jq program into a file read with jq -f",
+        "Moves the JSON payloads off the command line (stdin or files), not only the program",
+        "Does not read the program from stdin with jq -f -",
+        "Guards against a missing or empty payload: a document count check on [inputs], or an explicit check when switching to --slurpfile"
+      ]
     }
   ]
 }
