@@ -102,7 +102,7 @@ python3 -c 'import json;print(json.load(open("plugin.json"))["version"])'
 
 | Cookbook | Content |
 |---------|---------|
-| [jq Cookbook](references/jq-cookbook.md) | Filtering, transforms, GitHub CLI |
+| [jq Cookbook](references/jq-cookbook.md) | Filtering, transforms, GitHub CLI, large inputs ("Argument list too long", Windows) |
 | [yq Cookbook](references/yq-cookbook.md) | Actions, Compose, K8s |
 | [dasel Cookbook](references/dasel-cookbook.md) | TOML/XML, conversion |
 | [CSV Processing](references/csv-processing.md) | qsv workflows, joins |

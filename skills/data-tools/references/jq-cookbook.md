@@ -203,6 +203,59 @@ Measured with jq 1.8.2: `.key[]` on a missing key exits 5, `.key[]?` exits 0 wit
 no output, and a missing file exits 2. When a CI job reports `exit code 5` with
 no output at all and jq appears anywhere in the script, suspect this first.
 
+## Large inputs do not belong on the command line
+
+A program or a JSON payload passed as an argument (`jq '<program>'`,
+`--arg`, `--argjson`) counts against the operating system's argument limit,
+and jq never starts when it is passed:
+
+| Platform | Limit | Source |
+|---|---|---|
+| Linux | 131072 bytes for **one** argument (`MAX_ARG_STRLEN`); about 2 MiB for all of them (`getconf ARG_MAX`) | kernel |
+| Windows | 32767 characters for the **whole** command line, program name included | [CreateProcess, `lpCommandLine`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessa) |
+
+The shell reports it, not jq: `bash: .../jq: Argument list too long`. A script
+that works on Linux can still fail on Windows (Git Bash) on its first call,
+because a 90 KB program fits the Linux limit and not the Windows one
+(netresearch/git-workflow-skill#395). An API answer that grows with the data, such as
+PR comments or check runs, passes the Linux limit too.
+
+```bash
+# BAD — the program and the payloads are arguments
+jq -n --argjson g "$graphql" --argjson r "$rules" '<1000-line program>'
+
+# GOOD — the program from a file, the payloads on stdin, one JSON document per
+# line. The count check makes a missing payload an error.
+printf '%s\n' "$graphql" "$rules" \
+  | jq -n -f program.jq
+# program.jq begins with:
+#   [inputs] as $in
+#   | if ($in | length) != 2 then error("expected 2 documents, got \($in | length)") else . end
+#   | $in[0] as $g | $in[1] as $r | ...
+```
+
+Three details decide whether the change is safe:
+
+- **`jq -f -` does not read stdin.** jq answers `Could not open -`. Ship the
+  program as a file. `-f /dev/stdin` works on Linux, but then stdin is no longer
+  free for the payloads.
+- **`--slurpfile` reads an empty file as `[]`**, so `$x[0]` is `null` with exit
+  0. `--argjson x ""` fails with `invalid JSON text passed to --argjson` and
+  exit 2. Swapping one for the other turns "the API returned an empty body"
+  into "there is no data", unless the program checks the count.
+- **An empty line between documents is skipped.** `printf '%s\n' '{"a":1}' '' '[2]'`
+  gives `[inputs] | length` = 2, not 3. That is why the count check is needed:
+  without it, every later payload shifts into the wrong variable.
+
+A test can enforce the Windows limit on Linux: put a `jq` wrapper first on
+`PATH` that adds up the length of its arguments and exits 126 above 32767
+before it runs the real jq. Pick payload sizes between 32767 and 131072, or the
+Linux kernel refuses the call before the wrapper sees it.
+
+Measured with jq 1.8.2 on Linux: a 140000-byte `--argjson` fails with
+`Argument list too long`, `-f -` exits 2, `--slurpfile` of an empty file gives
+`[]` with exit 0, and the count check above exits 5 on a missing document.
+
 ## API Response Parsing
 
 ### Extract Nested Data
