@@ -211,7 +211,7 @@ and jq never starts when it is passed:
 
 | Platform | Limit | Source |
 |---|---|---|
-| Linux | 131072 bytes for **one** argument including its terminating NUL (`MAX_ARG_STRLEN`, 32 pages of 4 KiB); about 2 MiB for all of them (`getconf ARG_MAX`) | measured, see below |
+| Linux | 131072 bytes for **one** argument including its terminating NUL (`MAX_ARG_STRLEN`, 32 pages of 4 KiB); `getconf ARG_MAX` (2 MiB here) for all arguments **and** the environment together, which a large environment reduces | measured, see below; [execve(2)](https://man7.org/linux/man-pages/man2/execve.2.html) |
 | Windows | 32767 characters for the **whole** command line, program name included | [CreateProcess, `lpCommandLine`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessa) |
 
 The shell reports it, not jq: `bash: .../jq: Argument list too long`. A script
@@ -248,9 +248,12 @@ Three details decide whether the change is safe:
   without it, every later payload shifts into the wrong variable.
 
 A test can enforce the Windows limit on Linux: put a `jq` wrapper first on
-`PATH` that adds up the length of its arguments and exits 126 above 32767
-before it runs the real jq. Pick payload sizes between 32767 and 131072, or the
-Linux kernel refuses the call before the wrapper sees it.
+`PATH` that adds up the program name and its arguments, one space between each,
+and exits 126 above the limit before it runs the real jq. That sum is a lower
+bound: Windows also counts the quotes around arguments that contain spaces and
+the terminating NUL, so refuse with a margin (for example above 32000) rather
+than at 32767. Pick payload sizes between the limit and 131072, or the Linux
+kernel refuses the call before the wrapper sees it.
 
 Measured with jq 1.8.2 on Linux (4 KiB pages): an argument of 131071 bytes
 passes and one of 131072 fails with `Argument list too long`, `-f -` exits 2, `--slurpfile` of an empty file gives
