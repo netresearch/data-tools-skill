@@ -236,6 +236,120 @@ VERDICT_CASES = [
         "DENY",
         """glab api projects/1 | grep -o '"name": "[^"]*"'""",
     ),
+    # #83: a job log is plain text. Both commands were denied on 1.9.6.
+    (
+        "GitLab-Job-Trace mit grep | sed",
+        "durch",
+        """glab api projects/1/jobs/2/trace | grep -E "scenarios? \\(" | sed 's/\\x1b\\[[0-9;]*m//g'""",
+    ),
+    (
+        "GitHub-Job-Logs mit grep | sed",
+        "durch",
+        """gh api repos/o/r/actions/jobs/1/logs | grep -E "FAIL" | sed 's/x/y/'""",
+    ),
+    (
+        "Job-Trace mit Variable als ID",
+        "durch",
+        """glab api "projects/$P/jobs/$JOB/trace" | grep -oE 'took [0-9]+s'""",
+    ),
+    (
+        "GitLab-Artefakt raw als Text",
+        "durch",
+        """glab api "projects/1/jobs/artifacts/main/raw/build.log?job=test" | grep -o 'FAIL.*'""",
+    ),
+    # Constructed: the job OBJECT answers JSON, a raw artifact with a structured
+    # name is still that format, and a log call must not exempt a JSON call.
+    (
+        "GitHub-Job-Objekt bleibt DENY",
+        "DENY",
+        """gh api repos/o/r/actions/jobs/1 | grep '"name"' | awk -F'"' '{print $4}'""",
+    ),
+    (
+        "GitLab-Job-Objekt bleibt DENY",
+        "DENY",
+        """glab api projects/1/jobs/2 | grep -o '"status": "[^"]*"'""",
+    ),
+    (
+        "GitLab-Jobliste bleibt DENY",
+        "DENY",
+        """glab api projects/1/jobs | grep -o '"name": "[^"]*"'""",
+    ),
+    (
+        "Trace-Suffix mit Wortfortsetzung bleibt DENY",
+        "DENY",
+        """glab api projects/1/jobs/2/traces | grep -o '"x": "[^"]*"'""",
+    ),
+    (
+        "Artefakt raw .json bleibt DENY",
+        "DENY",
+        """glab api "projects/1/jobs/artifacts/main/raw/report.json?job=t" | grep -o '"a": "[^"]*"'""",
+    ),
+    (
+        "Trace neben JSON-Aufruf bleibt DENY",
+        "DENY",
+        """cat <(glab api projects/1/jobs/2/trace) <(glab api projects/1/jobs/2) | grep -o '"name": "[^"]*"'""",
+    ),
+    (
+        "JSON-Aufruf vor Trace bleibt DENY",
+        "DENY",
+        """cat <(glab api projects/1/jobs/2) <(glab api projects/1/jobs/2/trace) | grep -o '"name": "[^"]*"'""",
+    ),
+    # #83: a structured name that is only a script's argument says nothing about
+    # what the script prints.
+    (
+        "php-Skript mit .json-Argument vor grep | awk",
+        "durch",
+        """php probe.php cases.json 2>&1 | grep -v "SomeException" | awk '{print $1}'""",
+    ),
+    (
+        "python3-Skript mit Optionen vor grep -o",
+        "durch",
+        """FOO=1 python3 -u scripts/run.py --config ci.yaml | grep -o 'took [0-9]*'""",
+    ),
+    # Constructed: every way of printing the file itself stays denied.
+    (
+        "python -m json.tool bleibt DENY",
+        "DENY",
+        """python3 -m json.tool a.json | grep -o '"v": "[^"]*"'""",
+    ),
+    (
+        "python -c bleibt DENY",
+        "DENY",
+        """python3 -c "print(open('a.json').read())" | grep -o '"v": "[^"]*"'""",
+    ),
+    (
+        "node -e bleibt DENY",
+        "DENY",
+        """node -e 'process.stdout.write(require("fs").readFileSync("a.json"))' | grep -o '"v": "[^"]*"'""",
+    ),
+    (
+        "curl auf .json bleibt DENY",
+        "DENY",
+        """curl -s https://x/a.json | grep -o '"v":"[^"]*"'""",
+    ),
+    (
+        "git show auf package.json bleibt DENY",
+        "DENY",
+        """git show HEAD:package.json | grep -o '"version": "[^"]*"'""",
+    ),
+    (
+        "unzip -p auf package.json bleibt DENY",
+        "DENY",
+        """unzip -p a.zip package.json | grep -o '"version": "[^"]*"'""",
+    ),
+    # #83 asked to ignore --include globs as well. An included glob names the
+    # files grep reads, so the extraction through it stays denied; an excluded
+    # glob names files grep skips.
+    (
+        "grep -o ueber --include=composer.json bleibt DENY",
+        "DENY",
+        """grep -rhoE '"version": *"[^"]+"' --include=composer.json .""",
+    ),
+    (
+        "--exclude=*.json zaehlt nicht als Eingabe",
+        "durch",
+        """grep -rhoE 'v[0-9.]+' --exclude=*.json --exclude-dir node_modules src""",
+    ),
     # Observed 2026-10-23 next to the Dockerfile case: TSV field extraction.
     (
         "awk -F Tab aus .tsv",
@@ -293,6 +407,20 @@ ADVISORY_CASES = [
     ),
     ("Textdatei warnt nicht", False, "cat README.md"),
     ("jq warnt nicht", False, "jq . pkg.json"),
+    # #83: the script's output is grepped, not cases.json.
+    (
+        "Skript-Argument .json warnt nicht",
+        False,
+        'php probe.php cases.json 2>&1 | grep -v "SomeException"',
+    ),
+    ("--exclude=*.yml warnt nicht", False, 'grep -rn "X" --exclude=*.yml src'),
+    # #83 also listed this one. grep does read the .yml files, so it still warns.
+    (
+        "--include=*.yml warnt weiter",
+        True,
+        'grep -rn "SomeClass" --include=*.php --include=*.yml src',
+    ),
+    ("Kontrolle ohne Glob", False, 'grep -rn "SomeClass" src'),
 ]
 
 
@@ -392,6 +520,26 @@ TIMED_CASES += [
         # Whole calls: repeated() cuts the last one mid-word, which is no
         # longer a raw fetch.
         "glab api /repository/files/x/raw " * (LONG // 33) + "| grep -o y",
+    ),
+    (
+        "100 KB glab api jobs/…/trace vor grep -o",
+        "durch",
+        "glab api /jobs/1/trace " * (LONG // 23) + "| grep -o y",
+    ),
+    (
+        "100 KB /jobs/ ohne Schraegstrich vor grep -o",
+        "DENY",
+        "glab api /jobs/" + repeated("x") + " | grep -o y",
+    ),
+    (
+        "100 KB Skriptlaeufe mit .json",
+        "durch",
+        repeated("php a.php b.json | ") + "grep -o y",
+    ),
+    (
+        "100 KB --exclude vor .json",
+        "DENY",
+        "grep -o y " + "--exclude=a " * (LONG // 12) + " b.json",
     ),
     ("100 KB yq", "durch", repeated("yq ")),
     ("100 KB jq >", "durch", repeated("jq > ")),

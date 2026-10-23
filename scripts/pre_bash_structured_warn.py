@@ -61,6 +61,32 @@ PIPED_TO_PARSER = re.compile(r"\|\s*(?:jq|yq|dasel|mlr|qsv)\b")
 GITLAB_RAW_PATH = re.compile(r"/repository/(?:files|blobs)/")
 GITLAB_RAW_SUFFIX = re.compile(r"/raw(?![\w.+-])")
 GITHUB_RAW_ACCEPT = re.compile(r"application/vnd\.github(?:\.v3)?\.raw(?![\w.+-])")
+# The same holds for the endpoints that answer a CI log or an artifact file:
+# GitLab's `jobs/<id>/trace` and `jobs/artifacts/<ref>/raw/<path>`, GitHub's
+# `actions/jobs/<id>/logs`. `grep … | sed` over a job log was denied as JSON
+# extraction (#83). The job object itself (`jobs/<id>`) still answers JSON, and
+# a raw artifact with a structured name still matches STRUCT.
+TEXT_ENDPOINTS = (
+    re.compile(r"/jobs/[^/\s]+/trace(?![\w.+-])"),
+    re.compile(r"/jobs/artifacts/[^/\s]+/raw/"),
+    re.compile(r"/actions/jobs/[^/\s]+/logs(?![\w.+-])"),
+)
+
+# A structured name that only reaches another program as its argument says
+# nothing about what that program prints: `php probe.php cases.json | grep -v X`
+# greps the script's output (#83). So a stage that runs a script file through
+# an interpreter does not make its statement structured. Inline code
+# (`python3 -c '…'`, `node -e '…'`) and a module (`python3 -m json.tool`)
+# stay structured: their first operand is code or a module name, not a script
+# file, and either can print the file as it is.
+INTERPRETERS = frozenset(
+    {"php", "python", "python3", "node", "ruby", "perl", "bash", "sh", "deno", "bun"}
+)
+SCRIPT_FILE = re.compile(r"[\w./-]+\.(?:php|py|js|mjs|cjs|ts|rb|pl|sh|bash)")
+# An excluded glob names files grep does NOT read. `--include` is left alone on
+# purpose: `grep -rhoE '"v": "[^"]+"' --include=composer.json .` reads exactly
+# the files the glob names.
+EXCLUDE_GLOB = re.compile(r"--exclude(?:-dir)?(?:=|\s+)\S+")
 
 # Field extraction from a structured file — the unambiguous half:
 #   grep … | awk/cut/sed/head -1/tail -1
@@ -301,7 +327,7 @@ def _api_parsed(stmt: str) -> bool:
 
 
 def _api_answers_raw(stmt: str) -> bool:
-    """Every `gh api`/`glab api` stage in stmt asks a raw-file endpoint.
+    """Every `gh api`/`glab api` stage in stmt asks a raw-file or text endpoint.
 
     A single call that answers JSON — another `api` stage or a `gh … --json`
     stage — keeps the statement structured, so a raw fetch next to a list
@@ -317,10 +343,50 @@ def _api_answers_raw(stmt: str) -> bool:
             if (
                 _in_order(stmt, pos, until, GITLAB_RAW_PATH, GITLAB_RAW_SUFFIX) < 0
                 and GITHUB_RAW_ACCEPT.search(stmt, pos, until) is None
+                and not any(p.search(stmt, pos, until) for p in TEXT_ENDPOINTS)
             ):
                 return False
             raw = True
     return raw
+
+
+def _runs_script(stage: str) -> bool:
+    """The stage runs a script file through an interpreter, without inline code.
+
+    Leading `VAR=value` words, and option words before the script, are
+    skipped; the first other word must be the script. An option with a
+    separate value (`-W ignore`) ends the scan on that value, which is not a
+    script, so the stage keeps its structured names in the check.
+    """
+    words = iter(stage.split())
+    for word in words:
+        if "=" not in word:
+            break
+    else:
+        return False
+    if os.path.basename(word) not in INTERPRETERS:
+        return False
+    for word in words:
+        if word.startswith("-") or "=" in word:
+            continue
+        return SCRIPT_FILE.fullmatch(word) is not None
+    return False
+
+
+def _names_structured(text: str) -> bool:
+    """True when text names a structured file as input to a text tool's stream.
+
+    Excluded globs and the arguments of a script run (_runs_script) do not
+    count. Each stage is read once, so the test stays linear in the length.
+    """
+    for stmt in STATEMENT_SPLIT.split(text):
+        for start, end in _stages(stmt):
+            stage = stmt[start:end]
+            if _runs_script(stage):
+                continue
+            if re.search(STRUCT, EXCLUDE_GLOB.sub(" ", stage), re.IGNORECASE):
+                return True
+    return False
 
 
 def _strip_quoted_heredocs(cmd: str) -> str:
@@ -374,7 +440,7 @@ def reads_structured(stmt: str) -> bool:
     advisory level stays filename-based on purpose, so an ordinary
     `gh api … | head` does not start warning.
     """
-    if re.search(STRUCT, stmt, re.IGNORECASE):
+    if _names_structured(stmt):
         return True
     return (
         _calls_json_api(stmt) and not _api_parsed(stmt) and not _api_answers_raw(stmt)
@@ -443,7 +509,7 @@ def advisory_nudges(cmd: str) -> list[str]:
     """Non-extracting text-tool use on a structured file: warn, do not block."""
     cmd = _executable_text(cmd)
     out: list[str] = []
-    if not re.search(STRUCT, cmd, re.IGNORECASE):
+    if not _names_structured(cmd):
         return out
     if re.search(r"(^|[|&;]|\bxargs\s+)\s*(grep|sed|awk|cat|head|tail)\b", cmd):
         out.append(f"text tool on structured data — {ADVICE}.")

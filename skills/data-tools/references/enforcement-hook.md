@@ -34,7 +34,8 @@ same commands on `Makefile` alone pass silently; the plain file does not rescue
 the call. Split it: the line tool on the plain file, `jq`/`yq` on the
 structured one, as two statements or two calls. Two statements in one call pass
 the deny check but can still draw the one-time warning, which reads the whole
-call.
+call. Two kinds of file name do not count: an `--exclude` value and the
+argument of a script run (see the list below).
 
 **Everything else warns once.** A presence, count or locate grep (`-c`, `-q`,
 `-l`, `-n`) is frequently aimed at a **comment**, which no structured parser can
@@ -69,6 +70,21 @@ Each of these was a false positive first, then a rule:
   (`…/files/composer.json/raw`) is still denied, and so is any other API call
   in the same statement that answers JSON. `vnd.github.raw+json` is not
   exempt: outside the contents API it answers JSON.
+- `glab api projects/1/jobs/2/trace | grep -E 'FAIL' | sed 's/x/y/'` — a CI
+  job log is plain text: GitLab `jobs/<id>/trace`, GitHub
+  `actions/jobs/<id>/logs`, and a GitLab artifact through
+  `jobs/artifacts/<ref>/raw/<path>` are treated like the raw-file endpoints
+  above. The job object itself (`jobs/<id>`) answers JSON and stays denied.
+- `php probe.php cases.json | grep -v X | awk '{print $1}'` — the text tool
+  reads the script's output, not `cases.json`. A pipeline stage that runs a
+  script file through `php`, `python`, `python3`, `node`, `ruby`, `perl`,
+  `bash`, `sh`, `deno` or `bun` does not count its file names. Inline code
+  (`python3 -c`, `node -e`) and `python3 -m json.tool` still count, and so do
+  `cat`, `curl`, `git show` and `unzip -p`, which pass the file through.
+- `grep -rn X --exclude=*.yml src` — an `--exclude`/`--exclude-dir` value
+  names files grep does not read. An `--include` value is still counted:
+  `grep -rhoE '"version": *"[^"]+"' --include=composer.json .` reads
+  exactly those files and stays denied.
 
 ## Verify
 
