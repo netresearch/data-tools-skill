@@ -257,6 +257,33 @@ VERDICT_CASES = [
         "durch",
         """glab api "projects/1/jobs/artifacts/main/raw/build.log?job=test" | grep -o 'FAIL.*'""",
     ),
+    # Review of PR 97: a ref can span segments, and one file out of a job's
+    # archive is raw too.
+    (
+        "GitLab-Artefakt raw mit mehrteiliger Ref",
+        "durch",
+        """glab api "projects/1/jobs/artifacts/refs/merge-requests/12/head/raw/build.log?job=t" | grep -o 'FAIL.*'""",
+    ),
+    (
+        "GitLab-Artefakt per Job-ID",
+        "durch",
+        """glab api projects/1/jobs/2/artifacts/build.log | grep FAIL | head -1""",
+    ),
+    (
+        "GitLab artifacts/tree bleibt DENY",
+        "DENY",
+        """glab api projects/1/jobs/2/artifacts/tree | grep -o '"name": "[^"]*"'""",
+    ),
+    (
+        "GitLab artifacts/keep bleibt DENY",
+        "DENY",
+        """glab api -X POST projects/1/jobs/2/artifacts/keep | grep -o '"status": "[^"]*"'""",
+    ),
+    (
+        "GitLab artifacts ohne Pfad bleibt DENY",
+        "DENY",
+        """glab api projects/1/jobs/2/artifacts | grep -o '"x": "[^"]*"'""",
+    ),
     # Constructed: the job OBJECT answers JSON, a raw artifact with a structured
     # name is still that format, and a log call must not exempt a JSON call.
     (
@@ -306,6 +333,43 @@ VERDICT_CASES = [
         "durch",
         """FOO=1 python3 -u scripts/run.py --config ci.yaml | grep -o 'took [0-9]*'""",
     ),
+    # Review of PR 97: runners with a `run` word, versioned names, quoted paths.
+    (
+        "uv run Skript mit .json-Argument",
+        "durch",
+        """uv run probe.py cases.json 2>&1 | grep -v SomeException | awk '{print $1}'""",
+    ),
+    (
+        "deno run Skript mit .json-Argument",
+        "durch",
+        """deno run probe.ts cases.json | grep -v X | awk '{print $1}'""",
+    ),
+    (
+        "python3.12 Skript mit .json-Argument",
+        "durch",
+        """python3.12 probe.py cases.json | grep -v X | awk '{print $1}'""",
+    ),
+    (
+        "zitierter Skriptname",
+        "durch",
+        """php "probe.php" cases.json | grep -o 'took [0-9]*'""",
+    ),
+    # …but the script must be a script file, and its stdin is still read.
+    (
+        "Konsole ohne Endung mit .yaml bleibt DENY",
+        "DENY",
+        """php bin/console debug:config framework config/packages/framework.yaml | grep secret | awk '{print $2}'""",
+    ),
+    (
+        ".json auf stdin des Skripts bleibt DENY",
+        "DENY",
+        """python3 script.py < data.json | grep -o '"name": "[^"]*"'""",
+    ),
+    (
+        "uv run python -m json.tool bleibt DENY",
+        "DENY",
+        """uv run python -m json.tool a.json | grep -o '"v": "[^"]*"'""",
+    ),
     # Constructed: every way of printing the file itself stays denied.
     (
         "python -m json.tool bleibt DENY",
@@ -349,6 +413,12 @@ VERDICT_CASES = [
         "--exclude=*.json zaehlt nicht als Eingabe",
         "durch",
         """grep -rhoE 'v[0-9.]+' --exclude=*.json --exclude-dir node_modules src""",
+    ),
+    # Review of PR 97: excluding ONE named file leaves the other .json files in.
+    (
+        "--exclude=package-lock.json bleibt DENY",
+        "DENY",
+        """grep -rhoE '"version": *"[^"]+"' --exclude-dir=node_modules --exclude=package-lock.json .""",
     ),
     # Observed 2026-10-23 next to the Dockerfile case: TSV field extraction.
     (
@@ -540,6 +610,21 @@ TIMED_CASES += [
         "100 KB --exclude vor .json",
         "DENY",
         "grep -o y " + "--exclude=a " * (LONG // 12) + " b.json",
+    ),
+    (
+        "100 KB --exclude= ohne Leerzeichen vor .json",
+        "DENY",
+        "grep -o y " + repeated("--exclude=") + " b.json",
+    ),
+    (
+        "100 KB < im Skriptlauf",
+        "durch",
+        "php a.php " + repeated("< ") + "| grep -o y",
+    ),
+    (
+        "100 KB jobs/artifacts/ ohne /raw/",
+        "DENY",
+        "glab api " + repeated("/jobs/artifacts/") + " | grep -o y",
     ),
     ("100 KB yq", "durch", repeated("yq ")),
     ("100 KB jq >", "durch", repeated("jq > ")),

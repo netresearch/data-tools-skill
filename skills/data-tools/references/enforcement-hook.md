@@ -34,8 +34,8 @@ same commands on `Makefile` alone pass silently; the plain file does not rescue
 the call. Split it: the line tool on the plain file, `jq`/`yq` on the
 structured one, as two statements or two calls. Two statements in one call pass
 the deny check but can still draw the one-time warning, which reads the whole
-call. Two kinds of file name do not count: an `--exclude` value and the
-argument of a script run (see the list below).
+call. Two kinds of file name do not count: an excluded glob or directory, and
+the argument of a script run (see the list below).
 
 **Everything else warns once.** A presence, count or locate grep (`-c`, `-q`,
 `-l`, `-n`) is frequently aimed at a **comment**, which no structured parser can
@@ -72,17 +72,24 @@ Each of these was a false positive first, then a rule:
   exempt: outside the contents API it answers JSON.
 - `glab api projects/1/jobs/2/trace | grep -E 'FAIL' | sed 's/x/y/'` — a CI
   job log is plain text: GitLab `jobs/<id>/trace`, GitHub
-  `actions/jobs/<id>/logs`, and a GitLab artifact through
-  `jobs/artifacts/<ref>/raw/<path>` are treated like the raw-file endpoints
-  above. The job object itself (`jobs/<id>`) answers JSON and stays denied.
+  `actions/jobs/<id>/logs`, and a GitLab artifact file through
+  `jobs/<id>/artifacts/<path>` or `jobs/artifacts/<ref>/raw/<path>` are
+  treated like the raw-file endpoints above. The job object (`jobs/<id>`),
+  `artifacts/tree` and `artifacts/keep` answer JSON and stay denied.
 - `php probe.php cases.json | grep -v X | awk '{print $1}'` — the text tool
   reads the script's output, not `cases.json`. A pipeline stage that runs a
-  script file through `php`, `python`, `python3`, `node`, `ruby`, `perl`,
-  `bash`, `sh`, `deno` or `bun` does not count its file names. Inline code
-  (`python3 -c`, `node -e`) and `python3 -m json.tool` still count, and so do
-  `cat`, `curl`, `git show` and `unzip -p`, which pass the file through.
-- `grep -rn X --exclude=*.yml src` — an `--exclude`/`--exclude-dir` value
-  names files grep does not read. An `--include` value is still counted:
+  script file through `php`, `python` (also `python3`, `python3.12`), `node`,
+  `ruby`, `perl`, `bash`, `sh`, `deno run`, `bun run` or `uv run` does not
+  count its file names. The script must end in `.php`, `.py`, `.js`, `.mjs`,
+  `.cjs`, `.ts`, `.rb`, `.pl`, `.sh` or `.bash`: `php bin/console debug:config
+  … framework.yaml` prints YAML and stays denied. A file on the script's
+  stdin (`< data.json`) still counts. Inline code (`python3 -c`, `node -e`)
+  and `python3 -m json.tool` still count, and so do `cat`, `curl`, `git show`
+  and `unzip -p`, which pass the file through.
+- `grep -rn X --exclude=*.yml src` — a globbed `--exclude` value and an
+  `--exclude-dir` value name files grep does not read. A single named file
+  (`--exclude=package-lock.json`) still counts, because the other `.json`
+  files are read. An `--include` value is still counted:
   `grep -rhoE '"version": *"[^"]+"' --include=composer.json .` reads
   exactly those files and stays denied.
 

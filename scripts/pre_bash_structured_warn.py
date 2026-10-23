@@ -68,9 +68,16 @@ GITHUB_RAW_ACCEPT = re.compile(r"application/vnd\.github(?:\.v3)?\.raw(?![\w.+-]
 # a raw artifact with a structured name still matches STRUCT.
 TEXT_ENDPOINTS = (
     re.compile(r"/jobs/[^/\s]+/trace(?![\w.+-])"),
-    re.compile(r"/jobs/artifacts/[^/\s]+/raw/"),
+    # One file out of a job's archive. `artifacts/tree` and `artifacts/keep`
+    # answer JSON, and `artifacts` alone is the zip.
+    re.compile(r"/jobs/[^/\s]+/artifacts/(?!(?:tree|keep)(?![\w.+-]))[^\s/?]"),
     re.compile(r"/actions/jobs/[^/\s]+/logs(?![\w.+-])"),
 )
+# `jobs/artifacts/<ref>/raw/<path>`: the ref can span segments
+# (`refs/merge-requests/1/head`), so it is found as two ordered scans, like
+# GITLAB_RAW_PATH and GITLAB_RAW_SUFFIX.
+GITLAB_ARTIFACT_BY_REF = re.compile(r"/jobs/artifacts/")
+RAW_SEGMENT = re.compile(r"/raw/")
 
 # A structured name that only reaches another program as its argument says
 # nothing about what that program prints: `php probe.php cases.json | grep -v X`
@@ -78,15 +85,19 @@ TEXT_ENDPOINTS = (
 # an interpreter does not make its statement structured. Inline code
 # (`python3 -c '…'`, `node -e '…'`) and a module (`python3 -m json.tool`)
 # stay structured: their first operand is code or a module name, not a script
-# file, and either can print the file as it is.
-INTERPRETERS = frozenset(
-    {"php", "python", "python3", "node", "ruby", "perl", "bash", "sh", "deno", "bun"}
-)
+# file, and either can print the file as it is. The script needs one of the
+# SCRIPT_FILE extensions: `php bin/console debug:config … x.yaml` prints YAML.
+# `uv run`, `deno run` and `bun run` put a `run` word before the script.
+INTERPRETER = re.compile(r"(?:php|python[\d.]*|node|ruby|perl|bash|sh|deno|bun|uv)")
 SCRIPT_FILE = re.compile(r"[\w./-]+\.(?:php|py|js|mjs|cjs|ts|rb|pl|sh|bash)")
-# An excluded glob names files grep does NOT read. `--include` is left alone on
-# purpose: `grep -rhoE '"v": "[^"]+"' --include=composer.json .` reads exactly
-# the files the glob names.
-EXCLUDE_GLOB = re.compile(r"--exclude(?:-dir)?(?:=|\s+)\S+")
+# The word after a stdin redirection (`< f`, not `<<` or `<(`). It stops at the
+# next `<`, so a run of `<` cannot rescan the same text.
+STDIN_FILE = re.compile(r"(?<!<)<(?![<(])\s*([^\s<]+)")
+# An excluded glob names files grep does NOT read, so its value does not count.
+# Only a glob (`--exclude=*.json`) or a directory: after `--exclude=package-lock.json`
+# the other .json files are still read. `--include` is left alone on purpose:
+# `grep -rhoE '"v": "[^"]+"' --include=composer.json .` reads exactly those files.
+EXCLUDE_VALUE = re.compile(r"--exclude(-dir)?(?:=|\s+)(\S+)")
 
 # Field extraction from a structured file — the unambiguous half:
 #   grep … | awk/cut/sed/head -1/tail -1
@@ -344,6 +355,7 @@ def _api_answers_raw(stmt: str) -> bool:
                 _in_order(stmt, pos, until, GITLAB_RAW_PATH, GITLAB_RAW_SUFFIX) < 0
                 and GITHUB_RAW_ACCEPT.search(stmt, pos, until) is None
                 and not any(p.search(stmt, pos, until) for p in TEXT_ENDPOINTS)
+                and _in_order(stmt, pos, until, GITLAB_ARTIFACT_BY_REF, RAW_SEGMENT) < 0
             ):
                 return False
             raw = True
@@ -364,27 +376,42 @@ def _runs_script(stage: str) -> bool:
             break
     else:
         return False
-    if os.path.basename(word) not in INTERPRETERS:
+    if not INTERPRETER.fullmatch(os.path.basename(word)):
         return False
     for word in words:
-        if word.startswith("-") or "=" in word:
+        if word.startswith("-") or "=" in word or word == "run":
             continue
-        return SCRIPT_FILE.fullmatch(word) is not None
+        if INTERPRETER.fullmatch(word):  # `uv run python3 x.py`
+            continue
+        return SCRIPT_FILE.fullmatch(word.strip("'\"")) is not None
     return False
+
+
+def _drop_excluded(match: re.Match) -> str:
+    """Blank an --exclude-dir value, or an --exclude value that is a glob."""
+    if match.group(1) or "*" in match.group(2):
+        return " "
+    return match.group(0)
 
 
 def _names_structured(text: str) -> bool:
     """True when text names a structured file as input to a text tool's stream.
 
-    Excluded globs and the arguments of a script run (_runs_script) do not
-    count. Each stage is read once, so the test stays linear in the length.
+    Excluded globs and directories, and the arguments of a script run
+    (_runs_script), do not count. Each stage is read once, so the test stays linear in the length.
     """
     for stmt in STATEMENT_SPLIT.split(text):
         for start, end in _stages(stmt):
             stage = stmt[start:end]
             if _runs_script(stage):
+                # A file on the script's stdin is still read: `< data.json`.
+                for m in STDIN_FILE.finditer(stage):
+                    if re.search(STRUCT, m.group(1), re.IGNORECASE):
+                        return True
                 continue
-            if re.search(STRUCT, EXCLUDE_GLOB.sub(" ", stage), re.IGNORECASE):
+            if re.search(
+                STRUCT, EXCLUDE_VALUE.sub(_drop_excluded, stage), re.IGNORECASE
+            ):
                 return True
     return False
 
