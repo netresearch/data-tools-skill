@@ -51,6 +51,17 @@ JSON_FLAG = re.compile(r"\s--json\s")
 API_QUERY_FLAG = re.compile(r"\s(?:--jq|-q)\s")
 PIPED_TO_PARSER = re.compile(r"\|\s*(?:jq|yq|dasel|mlr|qsv)\b")
 
+# …or unless the endpoint answers with a file's raw bytes instead of JSON:
+# GitLab's `repository/files/<path>/raw` and `repository/blobs/<sha>/raw`, and
+# GitHub's contents API asked for the raw media type. A Dockerfile fetched that
+# way is text, and `grep -o` on it was denied as JSON extraction. A raw file
+# whose own name is structured (`…/files/pkg.json/raw`) still matches STRUCT,
+# which reads_structured() checks first. `vnd.github.raw+json` is left out on
+# purpose: outside the contents API it answers JSON with a raw-text body.
+GITLAB_RAW_PATH = re.compile(r"/repository/(?:files|blobs)/")
+GITLAB_RAW_SUFFIX = re.compile(r"/raw(?![\w.+-])")
+GITHUB_RAW_ACCEPT = re.compile(r"application/vnd\.github(?:\.v3)?\.raw(?![\w.+-])")
+
 # Field extraction from a structured file — the unambiguous half:
 #   grep … | awk/cut/sed/head -1/tail -1
 #   grep -o / -oE / -oP
@@ -289,6 +300,29 @@ def _api_parsed(stmt: str) -> bool:
     )
 
 
+def _api_answers_raw(stmt: str) -> bool:
+    """Every `gh api`/`glab api` stage in stmt asks a raw-file endpoint.
+
+    A single call that answers JSON — another `api` stage or a `gh … --json`
+    stage — keeps the statement structured, so a raw fetch next to a list
+    call does not exempt the list call. Each call is read up to the next one,
+    because one stage can hold two (`cat <(glab api …) <(glab api …)`).
+    """
+    raw = False
+    for start, end in _stages(stmt):
+        if _in_order(stmt, start, end, GH_COMMAND, JSON_FLAG) >= 0:
+            return False
+        calls = [m.end() for m in JSON_API.finditer(stmt, start, end)]
+        for pos, until in zip(calls, calls[1:] + [end]):
+            if (
+                _in_order(stmt, pos, until, GITLAB_RAW_PATH, GITLAB_RAW_SUFFIX) < 0
+                and GITHUB_RAW_ACCEPT.search(stmt, pos, until) is None
+            ):
+                return False
+            raw = True
+    return raw
+
+
 def _strip_quoted_heredocs(cmd: str) -> str:
     """Replace each quoted heredoc, opener to closing line, with one space.
 
@@ -335,13 +369,16 @@ def reads_structured(stmt: str) -> bool:
     """True when the statement's input is structured data.
 
     Either it names a structured file, or it calls an API that answers JSON and
-    no parser has consumed that answer yet. Only the deny level asks this: the
+    no parser has consumed that answer yet and the endpoint is not one that
+    returns a file's raw content. Only the deny level asks this: the
     advisory level stays filename-based on purpose, so an ordinary
     `gh api … | head` does not start warning.
     """
     if re.search(STRUCT, stmt, re.IGNORECASE):
         return True
-    return _calls_json_api(stmt) and not _api_parsed(stmt)
+    return (
+        _calls_json_api(stmt) and not _api_parsed(stmt) and not _api_answers_raw(stmt)
+    )
 
 
 def extracts_from_structured(cmd: str) -> bool:

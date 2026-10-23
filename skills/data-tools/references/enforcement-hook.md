@@ -61,6 +61,14 @@ Each of these was a false positive first, then a rule:
   `| jq`) the stream is text, and grepping text is what one does with it. The
   short form is recognised only between `gh api` and the next pipe: a bare `-q`
   anywhere else is `grep -q`, and exempting that would open the hook's main case.
+- `glab api "projects/$P/repository/files/Dockerfile/raw?ref=main" | grep -o
+  'sha256:[0-9a-f]*'` — a raw-file endpoint (GitLab `repository/files/…/raw`
+  and `repository/blobs/…/raw`, GitHub `gh api …/contents/…` with
+  `-H 'Accept: application/vnd.github.raw'` or `…v3.raw`) answers the file
+  itself, not JSON. A raw file whose own name is structured
+  (`…/files/composer.json/raw`) is still denied, and so is any other API call
+  in the same statement that answers JSON. `vnd.github.raw+json` is not
+  exempt: outside the contents API it answers JSON.
 
 ## Verify
 
