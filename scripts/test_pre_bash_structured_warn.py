@@ -437,6 +437,16 @@ VERDICT_CASES = [
         """grep -rhoE 'v[0-9.]+' --exclude={*.json,*.yml} src""",
     ),
     (
+        "zitierte Klammerliste bleibt DENY",
+        "DENY",
+        """grep -rhoE '"version": *"[^"]+"' --exclude='{*.json,*.yml}' .""",
+    ),
+    (
+        "ruby3.2 Skript mit .yml-Argument",
+        "durch",
+        """ruby3.2 check.rb data.yml | grep -v X | cut -d' ' -f1""",
+    ),
+    (
         "php8.3 Skript mit .json-Argument",
         "durch",
         """php8.3 probe.php cases.json 2>&1 | grep -v SomeException | awk '{print $1}'""",

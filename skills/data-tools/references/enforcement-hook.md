@@ -79,7 +79,7 @@ Each of these was a false positive first, then a rule:
 - `php probe.php cases.json | grep -v X | awk '{print $1}'` — the text tool
   reads the script's output, not `cases.json`. A pipeline stage that runs a
   script file through `php` (also `php8.3`), `python` (also `python3`,
-  `python3.12`), `node`, `ruby`, `perl`, `bash`, `sh`, `deno run`, `bun run` or `uv run` does not
+  `python3.12`), `node`, `ruby` (also `ruby3.2`), `perl`, `bash`, `sh`, `deno run`, `bun run` or `uv run` does not
   count its file names. The script must end in `.php`, `.py`, `.js`, `.mjs`,
   `.cjs`, `.ts`, `.rb`, `.pl`, `.sh` or `.bash`: `php bin/console debug:config
   … framework.yaml` prints YAML and stays denied. A file on the script's
@@ -88,7 +88,7 @@ Each of these was a false positive first, then a rule:
   and `unzip -p`, which pass the file through.
 - `grep -rn X --exclude=*.yml src` — an `--exclude-dir` value, and an
   `--exclude` value that excludes a whole structured type (`*.yml`,
-  `{*.json,*.yml}`), name files grep does not read. A narrower exclusion
+  unquoted `{*.json,*.yml}`), name files grep does not read. A narrower exclusion
   (`--exclude=package-lock.json`, `--exclude='*-lock.json'`) still counts,
   because the other `.json` files are read. An `--include` value is still
   counted: `grep -rhoE '"version": *"[^"]+"' --include=composer.json .`

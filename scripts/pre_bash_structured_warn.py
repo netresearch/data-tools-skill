@@ -396,11 +396,13 @@ def _runs_script(stage: str) -> bool:
 
 def _drop_excluded(match: re.Match) -> str:
     """Blank an --exclude-dir value, or an --exclude of whole structured types."""
-    value = match.group(2).strip("'\"")
+    value = match.group(2)
+    # Only bash expands a brace list, and only an unquoted one: grep reads
+    # `--exclude='{*.json,*.yml}'` as one literal pattern.
     if value.startswith("{") and value.endswith("}"):
         globs = value[1:-1].split(",")
     else:
-        globs = [value]
+        globs = [value.strip("'\"")]
     if match.group(1) or all(WHOLE_TYPE_GLOB.fullmatch(g) for g in globs):
         return " "
     return match.group(0)
