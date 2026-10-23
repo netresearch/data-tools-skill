@@ -59,5 +59,5 @@ Which of these checks must pass before a pull request can merge is set in the br
 
 - The hook guards against mistakes; it is not a security boundary. It recognises the text-tool patterns described in `skills/data-tools/references/enforcement-hook.md`, and an agent can reach the same data by other means.
 - The hook fails open by design: on a payload it cannot read, or when its state file is unusable, it lets the command run. Under Claude Code's hook semantics a hook that exceeds its 3-second timeout (`hooks/hooks.json`) or fails does not block the command either.
-- Detection of structured files is based on file names (`.json`, `.jsonl`, `.yaml`, `.yml`, `.toml`, `.xml`, `.csv`, `.tsv`) and on `gh`/`glab` JSON API calls; a structured file with another name is not recognised.
+- Detection of structured files is based on file names (`.json`, `.jsonl`, `.yaml`, `.yml`, `.toml`, `.xml`, `.csv`, `.tsv`) and on `gh`/`glab` JSON API calls; a structured file with another name is not recognised. That includes a file fetched through a raw-content endpoint (GitLab `repository/files/…/raw`, GitHub's raw media type): its answer counts as structured only when the file's own name is.
 - The commands the skill recommends are examples for the agent. The skill does not install jq, yq, dasel, qsv or mlr; users obtain and update those tools from their own sources.

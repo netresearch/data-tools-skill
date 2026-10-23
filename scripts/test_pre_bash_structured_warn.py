@@ -179,6 +179,69 @@ VERDICT_CASES = [
         "DENY",
         """glab api projects/1/pipelines | awk -F'"' '{print $4}'""",
     ),
+    # A raw-file endpoint answers the file itself, not JSON. Observed 2026-10-23:
+    # reading a pinned digest out of a Dockerfile was denied as JSON extraction.
+    (
+        "Dockerfile ueber GitLab files/…/raw",
+        "durch",
+        'export GITLAB_HOST=git.netresearch.de; P=orocommerce%2Foro-commerce-enterprise-reference; glab api "projects/$P/repository/files/Dockerfile-init-test/raw?ref=main" | grep -n \'ci-env\' ; d=$(glab api "projects/$P/repository/files/Dockerfile-init-test/raw?ref=main" | grep -o \'sha256:[0-9a-f]*\' | head -1); echo "pinned=$d"',
+    ),
+    # Constructed: the same for GitHub's contents API with the raw media type.
+    (
+        "gh contents mit raw-Accept",
+        "durch",
+        """gh api -H 'Accept: application/vnd.github.raw' repos/o/r/contents/Dockerfile | grep -o 'sha256:[0-9a-f]*'""",
+    ),
+    (
+        "gh contents mit v3.raw-Accept",
+        "durch",
+        """gh api repos/o/r/contents/Dockerfile -H "Accept: application/vnd.github.v3.raw" | grep -o 'FROM .*'""",
+    ),
+    # Constructed: the exemption covers the raw file, not what it is called. A
+    # raw .json is still JSON; a contents call without the raw media type
+    # answers JSON; `raw+json` answers JSON outside the contents API; and a
+    # raw fetch must not exempt a JSON call in the same statement.
+    (
+        "raw .json ueber GitLab bleibt DENY",
+        "DENY",
+        """glab api "projects/1/repository/files/composer.json/raw?ref=main" | grep -o '"name": "[^"]*"'""",
+    ),
+    (
+        "gh contents ohne raw-Accept bleibt DENY",
+        "DENY",
+        """gh api repos/o/r/contents/Dockerfile | grep -o '"sha": "[^"]*"'""",
+    ),
+    (
+        "gh raw+json-Accept bleibt DENY",
+        "DENY",
+        """gh api -H 'Accept: application/vnd.github.raw+json' repos/o/r/issues/1 | grep -o '"body": "[^"]*"'""",
+    ),
+    (
+        "raw-Abruf neben JSON-Aufruf bleibt DENY",
+        "DENY",
+        """glab api projects/1/repository/files/D/raw | cat - <(glab api projects/1) | grep -o '"name": "[^"]*"'""",
+    ),
+    (
+        "zwei API-Aufrufe in einer Stufe bleiben DENY",
+        "DENY",
+        """cat <(glab api projects/1/repository/files/D/raw) <(glab api projects/1) | grep -o '"name": "[^"]*"'""",
+    ),
+    (
+        "raw-Abruf neben gh --json bleibt DENY",
+        "DENY",
+        """gh pr list --json title | cat - <(glab api projects/1/repository/files/D/raw) | grep -o '"title": "[^"]*"'""",
+    ),
+    (
+        "Extraktion aus glab api projects/1",
+        "DENY",
+        """glab api projects/1 | grep -o '"name": "[^"]*"'""",
+    ),
+    # Observed 2026-10-23 next to the Dockerfile case: TSV field extraction.
+    (
+        "awk -F Tab aus .tsv",
+        "DENY",
+        """awk -F'\\t' '$3=="exists"{print $1}' state.tsv""",
+    ),
     # …but only until a parser has consumed the response. After --jq the stream
     # is text, and grepping text is what one does with it.
     (
@@ -318,6 +381,18 @@ TIMED_CASES += [
     ("100 KB gh x", "durch", repeated("gh x ")),
     ("100 KB gh api", "durch", repeated("gh api ")),
     ("100 KB gh api x", "durch", repeated("gh api x ")),
+    (
+        "100 KB glab api files/ ohne raw vor grep -o",
+        "DENY",
+        "glab api /repository/files/x " * (LONG // 29) + "| grep -o y",
+    ),
+    (
+        "100 KB glab api files/…/raw vor grep -o",
+        "durch",
+        # Whole calls: repeated() cuts the last one mid-word, which is no
+        # longer a raw fetch.
+        "glab api /repository/files/x/raw " * (LONG // 33) + "| grep -o y",
+    ),
     ("100 KB yq", "durch", repeated("yq ")),
     ("100 KB jq >", "durch", repeated("jq > ")),
     ("100 KB offene Heredocs", "durch", repeated("cat <<'A' ")),
