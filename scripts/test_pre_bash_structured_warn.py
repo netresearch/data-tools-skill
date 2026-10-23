@@ -420,6 +420,27 @@ VERDICT_CASES = [
         "DENY",
         """grep -rhoE '"version": *"[^"]+"' --exclude-dir=node_modules --exclude=package-lock.json .""",
     ),
+    # Second review of PR 97: a glob that excludes only SOME .json files, too.
+    (
+        "--exclude='*-lock.json' bleibt DENY",
+        "DENY",
+        """grep -rhoE '"version": *"[^"]+"' --exclude='*-lock.json' --exclude-dir=node_modules .""",
+    ),
+    (
+        "--exclude=*.min.json bleibt DENY",
+        "DENY",
+        """grep -rhoE '"version": *"[^"]+"' --exclude=*.min.json .""",
+    ),
+    (
+        "--exclude={*.json,*.yml} zaehlt nicht als Eingabe",
+        "durch",
+        """grep -rhoE 'v[0-9.]+' --exclude={*.json,*.yml} src""",
+    ),
+    (
+        "php8.3 Skript mit .json-Argument",
+        "durch",
+        """php8.3 probe.php cases.json 2>&1 | grep -v SomeException | awk '{print $1}'""",
+    ),
     # Observed 2026-10-23 next to the Dockerfile case: TSV field extraction.
     (
         "awk -F Tab aus .tsv",

@@ -34,8 +34,8 @@ same commands on `Makefile` alone pass silently; the plain file does not rescue
 the call. Split it: the line tool on the plain file, `jq`/`yq` on the
 structured one, as two statements or two calls. Two statements in one call pass
 the deny check but can still draw the one-time warning, which reads the whole
-call. Two kinds of file name do not count: an excluded glob or directory, and
-the argument of a script run (see the list below).
+call. Two kinds of file name do not count: an excluded directory or whole
+structured type, and the argument of a script run (see the list below).
 
 **Everything else warns once.** A presence, count or locate grep (`-c`, `-q`,
 `-l`, `-n`) is frequently aimed at a **comment**, which no structured parser can
@@ -78,20 +78,21 @@ Each of these was a false positive first, then a rule:
   `artifacts/tree` and `artifacts/keep` answer JSON and stay denied.
 - `php probe.php cases.json | grep -v X | awk '{print $1}'` — the text tool
   reads the script's output, not `cases.json`. A pipeline stage that runs a
-  script file through `php`, `python` (also `python3`, `python3.12`), `node`,
-  `ruby`, `perl`, `bash`, `sh`, `deno run`, `bun run` or `uv run` does not
+  script file through `php` (also `php8.3`), `python` (also `python3`,
+  `python3.12`), `node`, `ruby`, `perl`, `bash`, `sh`, `deno run`, `bun run` or `uv run` does not
   count its file names. The script must end in `.php`, `.py`, `.js`, `.mjs`,
   `.cjs`, `.ts`, `.rb`, `.pl`, `.sh` or `.bash`: `php bin/console debug:config
   … framework.yaml` prints YAML and stays denied. A file on the script's
   stdin (`< data.json`) still counts. Inline code (`python3 -c`, `node -e`)
   and `python3 -m json.tool` still count, and so do `cat`, `curl`, `git show`
   and `unzip -p`, which pass the file through.
-- `grep -rn X --exclude=*.yml src` — a globbed `--exclude` value and an
-  `--exclude-dir` value name files grep does not read. A single named file
-  (`--exclude=package-lock.json`) still counts, because the other `.json`
-  files are read. An `--include` value is still counted:
-  `grep -rhoE '"version": *"[^"]+"' --include=composer.json .` reads
-  exactly those files and stays denied.
+- `grep -rn X --exclude=*.yml src` — an `--exclude-dir` value, and an
+  `--exclude` value that excludes a whole structured type (`*.yml`,
+  `{*.json,*.yml}`), name files grep does not read. A narrower exclusion
+  (`--exclude=package-lock.json`, `--exclude='*-lock.json'`) still counts,
+  because the other `.json` files are read. An `--include` value is still
+  counted: `grep -rhoE '"version": *"[^"]+"' --include=composer.json .`
+  reads exactly those files and stays denied.
 
 ## Verify
 

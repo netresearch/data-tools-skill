@@ -88,16 +88,23 @@ RAW_SEGMENT = re.compile(r"/raw/")
 # file, and either can print the file as it is. The script needs one of the
 # SCRIPT_FILE extensions: `php bin/console debug:config … x.yaml` prints YAML.
 # `uv run`, `deno run` and `bun run` put a `run` word before the script.
-INTERPRETER = re.compile(r"(?:php|python[\d.]*|node|ruby|perl|bash|sh|deno|bun|uv)")
+INTERPRETER = re.compile(
+    r"(?:php[\d.]*|python[\d.]*|node|ruby[\d.]*|perl|bash|sh|deno|bun|uv)"
+)
 SCRIPT_FILE = re.compile(r"[\w./-]+\.(?:php|py|js|mjs|cjs|ts|rb|pl|sh|bash)")
 # The word after a stdin redirection (`< f`, not `<<` or `<(`). It stops at the
 # next `<`, so a run of `<` cannot rescan the same text.
 STDIN_FILE = re.compile(r"(?<!<)<(?![<(])\s*([^\s<]+)")
 # An excluded glob names files grep does NOT read, so its value does not count.
-# Only a glob (`--exclude=*.json`) or a directory: after `--exclude=package-lock.json`
-# the other .json files are still read. `--include` is left alone on purpose:
+# Only a directory, or a glob that excludes a whole structured type
+# (`--exclude=*.json`, `--exclude={*.json,*.yml}`): after
+# `--exclude=package-lock.json` or `--exclude='*-lock.json'` the other .json
+# files are still read. `--include` is left alone on purpose:
 # `grep -rhoE '"v": "[^"]+"' --include=composer.json .` reads exactly those files.
 EXCLUDE_VALUE = re.compile(r"--exclude(-dir)?(?:=|\s+)(\S+)")
+WHOLE_TYPE_GLOB = re.compile(
+    r"\*\.(?:json|jsonl|ya?ml|toml|xml|csv|tsv)", re.IGNORECASE
+)
 
 # Field extraction from a structured file — the unambiguous half:
 #   grep … | awk/cut/sed/head -1/tail -1
@@ -388,8 +395,13 @@ def _runs_script(stage: str) -> bool:
 
 
 def _drop_excluded(match: re.Match) -> str:
-    """Blank an --exclude-dir value, or an --exclude value that is a glob."""
-    if match.group(1) or "*" in match.group(2):
+    """Blank an --exclude-dir value, or an --exclude of whole structured types."""
+    value = match.group(2).strip("'\"")
+    if value.startswith("{") and value.endswith("}"):
+        globs = value[1:-1].split(",")
+    else:
+        globs = [value]
+    if match.group(1) or all(WHOLE_TYPE_GLOB.fullmatch(g) for g in globs):
         return " "
     return match.group(0)
 
