@@ -408,26 +408,34 @@ def _drop_excluded(match: re.Match) -> str:
     return match.group(0)
 
 
+def _stage_names_structured(stage: str) -> bool:
+    """True when one pipeline stage names a structured file it reads.
+
+    In a script run (_runs_script) only a file on the script's stdin counts
+    (`< data.json`); elsewhere every name counts except excluded globs and
+    directories.
+    """
+    if _runs_script(stage):
+        return any(
+            re.search(STRUCT, m.group(1), re.IGNORECASE)
+            for m in STDIN_FILE.finditer(stage)
+        )
+    return bool(
+        re.search(STRUCT, EXCLUDE_VALUE.sub(_drop_excluded, stage), re.IGNORECASE)
+    )
+
+
 def _names_structured(text: str) -> bool:
     """True when text names a structured file as input to a text tool's stream.
 
-    Excluded globs and directories, and the arguments of a script run
-    (_runs_script), do not count. Each stage is read once, so the test stays linear in the length.
+    Each stage is judged by _stage_names_structured() and read once, so the
+    test stays linear in the length.
     """
-    for stmt in STATEMENT_SPLIT.split(text):
-        for start, end in _stages(stmt):
-            stage = stmt[start:end]
-            if _runs_script(stage):
-                # A file on the script's stdin is still read: `< data.json`.
-                for m in STDIN_FILE.finditer(stage):
-                    if re.search(STRUCT, m.group(1), re.IGNORECASE):
-                        return True
-                continue
-            if re.search(
-                STRUCT, EXCLUDE_VALUE.sub(_drop_excluded, stage), re.IGNORECASE
-            ):
-                return True
-    return False
+    return any(
+        _stage_names_structured(stmt[start:end])
+        for stmt in STATEMENT_SPLIT.split(text)
+        for start, end in _stages(stmt)
+    )
 
 
 def _strip_quoted_heredocs(cmd: str) -> str:
