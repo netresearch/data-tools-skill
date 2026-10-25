@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run ${CLAUDE_PLUGIN_ROOT}/scripts/pre_bash_structured_warn.py || true",
+            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/scripts/pre_bash_structured_warn.py\" || true",
             "timeout": 3
           }
         ]
