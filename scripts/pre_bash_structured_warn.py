@@ -494,32 +494,46 @@ def _blank_grep_patterns(cmd: str) -> str:
     return "".join(out)
 
 
-def _drop_grep_patterns(stage: str) -> str:
-    """Blank the pattern words of a grep stage, see GREP_COMMAND.
-
-    The stage comes back unchanged when it is not a grep, or when it does not
-    split into shell words (an unbalanced quote): then every name counts, as
-    before, rather than none.
-    """
+def _shell_word_spans(stage: str) -> list[tuple[int, int]] | None:
+    """The spans of stage's shell words, or None for an unbalanced quote."""
     words: list[tuple[int, int]] = []
     pos = 0
     for m in SHELL_WORD.finditer(stage):
         if stage[pos : m.start()].strip():
-            return stage
+            return None
         words.append(m.span())
         pos = m.end()
-    if stage[pos:].strip():
-        return stage
-    text = [stage[a:b] for a, b in words]
-    i = 0
-    while i < len(text) and "=" in text[i]:  # leading VAR=value words
-        i += 1
-    if i == len(text) or not GREP_COMMAND.fullmatch(os.path.basename(text[i])):
-        return stage
-    patterns: list[int] = []  # indexes of words that hold a pattern
+    return None if stage[pos:].strip() else words
+
+
+def _grep_option(word: str) -> tuple[bool, bool]:
+    """For one grep option word: (its value is the next word, it gives a pattern).
+
+    A long option takes its value after `=` or as the next word; in a short
+    cluster the first letter that takes a value ends it, with the value either
+    the rest of the word or, when the letter is last, the next word.
+    """
+    if word.startswith("--"):
+        name, eq, _ = word[2:].partition("=")
+        name = _grep_long_option(name)
+        if name not in GREP_LONG_WITH_VALUE:
+            return False, False
+        return not eq, name in GREP_PATTERN_OPTIONS
+    for k, letter in enumerate(word[1:], start=2):
+        if letter in GREP_SHORT_WITH_VALUE:
+            return k == len(word), letter in GREP_PATTERN_OPTIONS
+    return False, False
+
+
+def _grep_roles(text: list[str], i: int) -> tuple[list[int], list[int]] | None:
+    """Indexes of grep's pattern words and file operands, from text[i] on.
+
+    None when a word glues a redirection to something else (`version<a.json`):
+    then the words cannot be told apart and every name counts.
+    """
+    patterns: list[int] = []
     operands: list[int] = []
     options_done = False
-    i += 1
     while i < len(text):
         word = text[i]
         if REDIRECTION.match(word):
@@ -527,31 +541,43 @@ def _drop_grep_patterns(stage: str) -> str:
             i += 2 if REDIRECTION.fullmatch(word) else 1
             continue
         if any(m.group(1) for m in UNQUOTED_ANGLE.finditer(word)):
-            # A redirection glued to another word: every name counts.
-            return stage
+            return None
         if options_done or not word.startswith("-") or word == "-":
             operands.append(i)
         elif word == "--":
             options_done = True
-        elif word.startswith("--"):
-            name, eq, _ = word[2:].partition("=")
-            name = _grep_long_option(name)
-            if name in GREP_LONG_WITH_VALUE:
-                if not eq:
-                    i += 1
-                if name in GREP_PATTERN_OPTIONS:
-                    patterns.append(i)
         else:
-            for k, letter in enumerate(word[1:], start=2):
-                if letter in GREP_SHORT_WITH_VALUE:
-                    if k == len(word):  # the value is the next word
-                        i += 1
-                    if letter in GREP_PATTERN_OPTIONS:
-                        patterns.append(i)
-                    break
+            next_word, is_pattern = _grep_option(word)
+            i += next_word
+            if is_pattern:
+                patterns.append(i)
         i += 1
     if not patterns and operands:
         patterns.append(operands.pop(0))
+    return patterns, operands
+
+
+def _drop_grep_patterns(stage: str) -> str:
+    """Blank the pattern words of a grep stage, see GREP_COMMAND.
+
+    The stage comes back unchanged when it is not a grep, or when it does not
+    split into shell words (an unbalanced quote): then every name counts, as
+    before, rather than none.
+    """
+    words = _shell_word_spans(stage)
+    if words is None:
+        return stage
+    text = [stage[a:b] for a, b in words]
+    i = 0
+    while i < len(text) and "=" in text[i]:  # leading VAR=value words
+        i += 1
+    if i == len(text) or not GREP_COMMAND.fullmatch(os.path.basename(text[i])):
+        return stage
+    roles = _grep_roles(text, i + 1)
+    if roles is None:
+        # A redirection glued to another word: every name counts.
+        return stage
+    patterns, operands = roles
     if all(text[j] == "-" for j in operands):
         # grep reads stdin (no operand, or only `-`): keep the pattern in the
         # check, as before.
