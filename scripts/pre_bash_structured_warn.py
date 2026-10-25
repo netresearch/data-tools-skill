@@ -525,6 +525,18 @@ def _grep_option(word: str) -> tuple[bool, bool]:
     return False, False
 
 
+def _redirection_width(word: str) -> int:
+    """How many words a redirection at word takes: 2 for `<`, 1 for `<a.json`, else 0."""
+    if not REDIRECTION.match(word):
+        return 0
+    return 2 if REDIRECTION.fullmatch(word) else 1
+
+
+def _glued_redirection(word: str) -> bool:
+    """Does word hold a `<` or `>` outside quotes, as `version<a.json` does?"""
+    return any(m.group(1) for m in UNQUOTED_ANGLE.finditer(word))
+
+
 def _grep_roles(text: list[str], i: int) -> tuple[list[int], list[int]] | None:
     """Indexes of grep's pattern words and file operands, from text[i] on.
 
@@ -536,11 +548,12 @@ def _grep_roles(text: list[str], i: int) -> tuple[list[int], list[int]] | None:
     options_done = False
     while i < len(text):
         word = text[i]
-        if REDIRECTION.match(word):
+        width = _redirection_width(word)
+        if width:
             # `< in.json` or `<in.json`: a file grep reads, never the pattern.
-            i += 2 if REDIRECTION.fullmatch(word) else 1
+            i += width
             continue
-        if any(m.group(1) for m in UNQUOTED_ANGLE.finditer(word)):
+        if _glued_redirection(word):
             return None
         if options_done or not word.startswith("-") or word == "-":
             operands.append(i)
@@ -552,8 +565,6 @@ def _grep_roles(text: list[str], i: int) -> tuple[list[int], list[int]] | None:
             if is_pattern:
                 patterns.append(i)
         i += 1
-    if not patterns and operands:
-        patterns.append(operands.pop(0))
     return patterns, operands
 
 
@@ -578,6 +589,8 @@ def _drop_grep_patterns(stage: str) -> str:
         # A redirection glued to another word: every name counts.
         return stage
     patterns, operands = roles
+    if not patterns and operands:  # no -e/-f: the first operand is the pattern
+        patterns.append(operands.pop(0))
     if all(text[j] == "-" for j in operands):
         # grep reads stdin (no operand, or only `-`): keep the pattern in the
         # check, as before.
