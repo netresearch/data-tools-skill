@@ -110,6 +110,60 @@ EXCLUDE_VALUE = re.compile(r"--exclude(-dir)?(?:=|\s+)(\S+)")
 WHOLE_TYPE_GLOB = re.compile(
     r"\*\.(?:json|jsonl|ya?ml|toml|xml|csv|tsv)", re.IGNORECASE
 )
+# grep's pattern is what it searches FOR, not a file it reads: in
+# `grep -c 'hooks.json' notes.md` the only input is notes.md. The pattern is
+# the first operand, unless `-e`/`--regexp` or `-f`/`--file` supply it; then
+# every operand is a file. A `-f` file is read, but as a list of patterns:
+# grep prints lines of the operands only, so nothing is extracted from it.
+# Only a stage whose command word is grep, egrep or fgrep is read this way;
+# `xargs grep`, `git grep` and the like keep their names in the check, and so
+# does a grep without a file operand, which reads stdin (`grep -n5 a.json`).
+GREP_COMMAND = re.compile(r"[ef]?grep")
+# One shell word: quoted runs, escaped characters and plain characters. Each
+# alternative starts on a character no other one accepts, as in _quoted().
+SHELL_WORD = re.compile(r"""(?:'[^']*'|"(?:[^"\\]|\\.)*"|\\.|[^\s'"\\])+""", re.DOTALL)
+REDIRECTION = re.compile(r"\d*[<>]")
+# A `<` or `>` outside quotes. In `version<package.json` it ends the pattern
+# and starts a redirection inside one shell word; such a stage is not split.
+UNQUOTED_ANGLE = re.compile(r"""'[^']*'|"(?:[^"\\]|\\.)*"|\\.|([<>])""", re.DOTALL)
+# Options that take a value, so the word after them is not the pattern.
+GREP_SHORT_WITH_VALUE = "efmABCdD"
+GREP_LONG_WITH_VALUE = {
+    "regexp",
+    "file",
+    "max-count",
+    "after-context",
+    "before-context",
+    "context",
+    "devices",
+    "directories",
+    "include",
+    "exclude",
+    "exclude-from",
+    "exclude-dir",
+    "label",
+    "binary-files",
+    "group-separator",
+}
+# The long options without a value (GNU grep 3.12 `--help`). getopt accepts
+# any unique prefix (`--regex=` is `--regexp=`), so a prefix is resolved
+# against both lists; an ambiguous or unknown one is read as a flag.
+GREP_LONG_FLAGS = {
+    "basic-regexp", "binary", "byte-offset", "color", "colour", "count",
+    "dereference-recursive", "extended-regexp", "files-with-matches",
+    "files-without-match", "fixed-strings", "help", "ignore-case",
+    "initial-tab", "invert-match", "line-buffered", "line-number",
+    "line-regexp", "no-filename", "no-group-separator", "no-ignore-case",
+    "no-messages", "null", "null-data", "only-matching", "perl-regexp",
+    "quiet", "recursive", "silent", "text", "version", "with-filename",
+    "word-regexp",
+}  # fmt: skip
+GREP_PATTERN_OPTIONS = {"e", "f", "regexp", "file"}
+# The stages _drop_grep_patterns() is applied to: STATEMENT_SPLIT and
+# STAGE_BREAK together, as single characters, but not inside quotes, so the
+# alternation in `grep -n 'a.json\|b' x.py` stays in its pattern word. Quoted
+# runs and escapes are matched only to be stepped over; group 1 is a break.
+GREP_STAGE_SCAN = re.compile(r"""'[^']*'|"(?:[^"\\]|\\.)*"|\\.|([|;&\n])""", re.DOTALL)
 
 # Field extraction from a structured file — the unambiguous half:
 #   grep … | awk/cut/sed/head -1/tail -1
@@ -413,12 +467,159 @@ def _drop_excluded(match: re.Match) -> str:
     return match.group(0)
 
 
+def _grep_long_option(name: str) -> str:
+    """The long option a possibly abbreviated name selects, or name itself."""
+    if name in GREP_LONG_WITH_VALUE or name in GREP_LONG_FLAGS:
+        return name
+    matches = [
+        o for o in (*GREP_LONG_WITH_VALUE, *GREP_LONG_FLAGS) if o.startswith(name)
+    ]
+    return matches[0] if len(matches) == 1 else name
+
+
+def _blank_grep_patterns(cmd: str) -> str:
+    """Apply _drop_grep_patterns() to every stage of every statement.
+
+    Each stage keeps its length, so the result lines up with cmd. It runs
+    before OPTION_VALUES: `-F 'x'` there is a commit message file, but in a
+    grep it is the fixed-strings flag before the pattern.
+    """
+    out: list[str] = []
+    start = 0
+    for m in GREP_STAGE_SCAN.finditer(cmd):
+        if m.group(1):
+            out.append(_drop_grep_patterns(cmd[start : m.start()]) + m.group(1))
+            start = m.end()
+    out.append(_drop_grep_patterns(cmd[start:]))
+    return "".join(out)
+
+
+def _shell_word_spans(stage: str) -> list[tuple[int, int]] | None:
+    """The spans of stage's shell words, or None for an unbalanced quote."""
+    words: list[tuple[int, int]] = []
+    pos = 0
+    for m in SHELL_WORD.finditer(stage):
+        if stage[pos : m.start()].strip():
+            return None
+        words.append(m.span())
+        pos = m.end()
+    return None if stage[pos:].strip() else words
+
+
+def _grep_option(word: str) -> tuple[int, int | None]:
+    """For one grep option word: (words its value takes after this one, where
+    a pattern's blanking starts in the word that holds it, or None).
+
+    A long option takes its value after `=` or as the next word; in a short
+    cluster the first letter that takes a value ends it, with the value either
+    the rest of the word or, when the letter is last, the next word. The start
+    lets the caller blank `ex.json` in `-oex.json` and keep `-o`; it covers the
+    option letter too, so no dangling `-e` is left to take the next word, and
+    it is 0 when nothing would be left but the dash.
+    """
+    if word.startswith("--"):
+        name, eq, _ = word[2:].partition("=")
+        name = _grep_long_option(name)
+        if name not in GREP_LONG_WITH_VALUE:
+            return 0, None
+        return int(not eq), 0 if name in GREP_PATTERN_OPTIONS else None
+    for k, letter in enumerate(word[1:], start=2):
+        if letter in GREP_SHORT_WITH_VALUE:
+            step = int(k == len(word))
+            if letter not in GREP_PATTERN_OPTIONS:
+                return step, None
+            return step, 0 if step or k == 2 else k - 1
+    return 0, None
+
+
+def _redirection_width(word: str) -> int:
+    """How many words a redirection at word takes: 2 for `<`, 1 for `<a.json`, else 0."""
+    if not REDIRECTION.match(word):
+        return 0
+    return 2 if REDIRECTION.fullmatch(word) else 1
+
+
+def _glued_redirection(word: str) -> bool:
+    """Does word hold a `<` or `>` outside quotes, as `version<a.json` does?"""
+    return any(m.group(1) for m in UNQUOTED_ANGLE.finditer(word))
+
+
+def _grep_roles(
+    text: list[str], i: int
+) -> tuple[list[tuple[int, int]], list[int]] | None:
+    """grep's patterns as (word index, start in word) and its file operands
+    as word indexes, from text[i] on.
+
+    None when a word glues a redirection to something else (`version<a.json`):
+    then the words cannot be told apart and every name counts.
+    """
+    patterns: list[tuple[int, int]] = []
+    operands: list[int] = []
+    options_done = False
+    while i < len(text):
+        word = text[i]
+        width = _redirection_width(word)
+        if width:
+            # `< in.json` or `<in.json`: a file grep reads, never the pattern.
+            i += width
+            continue
+        if _glued_redirection(word):
+            return None
+        if options_done or not word.startswith("-") or word == "-":
+            operands.append(i)
+        elif word == "--":
+            options_done = True
+        else:
+            step, start = _grep_option(word)
+            i += step
+            if start is not None:
+                patterns.append((i, start))
+        i += 1
+    return patterns, operands
+
+
+def _drop_grep_patterns(stage: str) -> str:
+    """Blank the pattern words of a grep stage, see GREP_COMMAND.
+
+    The stage comes back unchanged when it is not a grep, or when it does not
+    split into shell words (an unbalanced quote): then every name counts, as
+    before, rather than none.
+    """
+    words = _shell_word_spans(stage)
+    if words is None:
+        return stage
+    text = [stage[a:b] for a, b in words]
+    i = 0
+    while i < len(text) and "=" in text[i]:  # leading VAR=value words
+        i += 1
+    if i == len(text) or not GREP_COMMAND.fullmatch(os.path.basename(text[i])):
+        return stage
+    roles = _grep_roles(text, i + 1)
+    if roles is None:
+        # A redirection glued to another word: every name counts.
+        return stage
+    patterns, operands = roles
+    if not patterns and operands:  # no -e/-f: the first operand is the pattern
+        patterns.append((operands.pop(0), 0))
+    if all(text[j] == "-" for j in operands):
+        # grep reads stdin (no operand, or only `-`): keep the pattern in the
+        # check, as before.
+        return stage
+    out = list(stage)
+    for i, start in patterns:
+        if i < len(words):
+            a, b = words[i]
+            a += start
+            out[a:b] = " " * (b - a)
+    return "".join(out)
+
+
 def _stage_names_structured(stage: str) -> bool:
     """True when one pipeline stage names a structured file it reads.
 
     In a script run (_runs_script) only a file on the script's stdin counts
     (`< data.json`); elsewhere every name counts except excluded globs and
-    directories.
+    directories. grep's pattern is already blank (_executable_text).
     """
     if _runs_script(stage):
         return any(
@@ -479,7 +680,7 @@ def is_cosmetic_locate(cmd: str) -> bool:
 
 def _executable_text(cmd: str) -> str:
     """Strip the parts of a command line that are data rather than instructions."""
-    cmd = _strip_quoted_heredocs(cmd or "")
+    cmd = _blank_grep_patterns(_strip_quoted_heredocs(cmd or ""))
     for pattern in OPTION_VALUES:
         cmd = pattern.sub(" ", cmd)
     return cmd
