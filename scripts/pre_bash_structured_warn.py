@@ -1,6 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: Netresearch DTT GmbH
+#
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
 """PreToolUse hook for Bash: keep text tools off structured-data files.
 
 The data-tools rule — use jq/yq/dasel/qsv/mlr instead of grep/sed/awk on

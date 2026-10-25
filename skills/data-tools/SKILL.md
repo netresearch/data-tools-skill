@@ -4,7 +4,7 @@
 name: data-tools
 description: "Use when querying, transforming, filtering, converting, or editing ANY JSON, JSONL, YAML, TOML, XML, or CSV. MUST replace grep/sed/awk on structured formats."
 license: "(MIT AND CC-BY-SA-4.0). See LICENSE-MIT and LICENSE-CC-BY-SA-4.0"
-compatibility: "Requires jq, yq. Optional: dasel, qsv, mlr."
+compatibility: "Requires uv (runs the plugin's hook on Python 3.11 or later), jq, yq. Optional: dasel, qsv, mlr."
 metadata:
   author: Netresearch DTT GmbH
   version: "1.9.7"

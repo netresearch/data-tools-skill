@@ -115,10 +115,10 @@ Contributions follow the [Netresearch contributing guide](https://github.com/net
 
 ### Tests
 
-The behavioural tests of the PreToolUse hook need only Python 3.10 or later:
+The behavioural tests of the PreToolUse hook need Python 3.11 or later, which `uv run --python 3.11` provides:
 
 ```bash
-python3 scripts/test_pre_bash_structured_warn.py
+uv run --python 3.11 python scripts/test_pre_bash_structured_warn.py
 ```
 
 - The script runs `scripts/pre_bash_structured_warn.py` as a subprocess with a hook payload per case and compares the result. It covers the deny cases (serializer rewrites, field extraction from files and from `gh`/`glab` API responses), the commands that must pass (count and presence greps, cosmetic `grep -n | sed`, prose in PR bodies, commit messages and quoted heredocs, output already parsed by `--jq`, a non-structured file fetched through a raw-content endpoint, a CI job log, a structured name that is only the argument of a script run or an `--exclude` of a whole structured type), the one-time warnings and their once-per-session deduplication, that a deny is never deduplicated, that a session id cannot steer the state file out of the temp directory, and that the hook answers within its timeout on long backslash runs and on 100 KB commands of repeated words.

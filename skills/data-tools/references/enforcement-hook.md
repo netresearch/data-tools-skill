@@ -100,12 +100,12 @@ Feed the hook the payload it receives, rather than trusting that it works:
 
 ```bash
 H="$CLAUDE_PLUGIN_ROOT/scripts/pre_bash_structured_warn.py"   # or the plugin cache path
-echo '{"tool_name":"Bash","tool_input":{"command":"grep -oE \"\\\"a\\\": .\" f.json"}}' | python3 "$H"  # deny
-echo '{"tool_name":"Bash","tool_input":{"command":"grep -c TODO ci.yaml"}}'             | python3 "$H"  # warn
-echo '{"tool_name":"Bash","tool_input":{"command":"jq -r .name package.json"}}'         | python3 "$H"  # silent
+echo '{"tool_name":"Bash","tool_input":{"command":"grep -oE \"\\\"a\\\": .\" f.json"}}' | uv run "$H"  # deny
+echo '{"tool_name":"Bash","tool_input":{"command":"grep -c TODO ci.yaml"}}'             | uv run "$H"  # warn
+echo '{"tool_name":"Bash","tool_input":{"command":"jq -r .name package.json"}}'         | uv run "$H"  # silent
 ```
 
-The full case list runs as `python3 scripts/test_pre_bash_structured_warn.py`.
+The full case list runs as `uv run --python 3.11 python scripts/test_pre_bash_structured_warn.py`.
 
 If nothing happens on a real `grep -oE … f.json`, the plugin's hooks have not been
 picked up — open `/hooks` once, or restart the session.
