@@ -36,7 +36,7 @@
 
 No Makefile or build scripts.
 
-- `python3 scripts/test_pre_bash_structured_warn.py` — case list for the PreToolUse gate; run after any change to it.
+- `uv run --python 3.11 python scripts/test_pre_bash_structured_warn.py` — case list for the PreToolUse gate; run after any change to it.
 
 - `bash scripts/verify-harness.sh --format=text --status` — check harness maturity level
 
