@@ -93,6 +93,15 @@ Each of these was a false positive first, then a rule:
   because the other `.json` files are read. An `--include` value is still
   counted: `grep -rhoE '"version": *"[^"]+"' --include=composer.json .`
   reads exactly those files and stays denied.
+- `grep -oE 'hooks.json' notes.md`, `grep -n -e 'x.json' src/a.py` — grep's
+  pattern is what it searches for, not a file it reads. In a stage whose
+  command word is `grep`, `egrep` or `fgrep`, the values of `-e`/`--regexp`
+  and `-f`/`--file` (a pattern file: grep prints lines of the operands only)
+  do not count, and without them neither does the first operand; a `|`
+  inside the quoted pattern (`'a.json\|b'`) stays part of it. The other
+  operands count: `grep -o version package.json` stays denied. A grep without
+  a file operand reads stdin and keeps its pattern counted, as do `xargs grep`
+  and `git grep`.
 
 ## Verify
 

@@ -486,6 +486,36 @@ VERDICT_CASES = [
         "DENY",
         """gh pr view 1 -q .title && grep -oE '"a": "[^"]+"' f.json""",
     ),
+    # grep's pattern is not a file it reads: a structured name in the pattern
+    # says nothing about the input. The operands still count.
+    (
+        "Muster 'hooks.json' in grep -oE auf .md",
+        "durch",
+        "grep -oE 'hooks.json' notes.md",
+    ),
+    ("--regexp=x.json auf .md", "durch", "grep --regexp=x.json -o notes.md"),
+    ("-f pats.json liefert nur Muster", "durch", "grep -f pats.json -o notes.md"),
+    ("grep -o auf package.json bleibt DENY", "DENY", "grep -o version package.json"),
+    ("grep -oe: e nimmt das Muster", "DENY", "grep -oe version package.json"),
+    ("grep -f: alle Operanden sind Dateien", "DENY", "grep -f pats.txt -o data.json"),
+    ("-A 3: das Muster folgt danach", "durch", "grep -A 3 -o 'hooks.json' notes.md"),
+    ("stdin-Datei ist kein Muster", "DENY", "grep <package.json -o version"),
+    (
+        "offenes Anfuehrungszeichen: alles zaehlt",
+        "DENY",
+        "grep -o 'x.json notes.md",
+    ),
+    # `-F 'x'` is a message file for git and gh, but grep's fixed-strings flag.
+    ("grep -F 'v': pkg.json bleibt Muster", "DENY", "grep -F 'v' -o pkg.json notes.md"),
+    ("--regex= ist --regexp=", "DENY", "grep --regex=v -o pkg.json notes.md"),
+    # A | inside the quoted pattern does not end the stage.
+    ("Alternation 'a.json|b' auf .md", "durch", "grep -oE 'a.json|b' notes.md"),
+    ("Alternation auf package.json bleibt DENY", "DENY", "grep -oE 'a|b' package.json"),
+    (
+        "offenes Anfuehrungszeichen am Ende: alles zaehlt",
+        "DENY",
+        "grep -o x.json notes.md '",
+    ),
     # Nothing structured in sight.
     ("grep auf Textdatei", "durch", "grep -oE 'ERROR' app.log | head -3"),
     ("jq ist korrekt", "durch", "jq -r '.name' pkg.json"),
@@ -522,6 +552,26 @@ ADVISORY_CASES = [
         'grep -rn "SomeClass" --include=*.php --include=*.yml src',
     ),
     ("Kontrolle ohne Glob", False, 'grep -rn "SomeClass" src'),
+    # A structured name as grep's pattern: the files read are .py and .md.
+    (
+        "-e 'hooks.json' auf .py warnt nicht",
+        False,
+        "grep -n -e 'hooks.json' -e 'CLAUDE_PLUGIN_ROOT' a/scripts/test_x.py b/tests/validate_rst_hook.py",
+    ),
+    ("Muster 'hooks.json' auf .md warnt nicht", False, "grep -c 'hooks.json' notes.md"),
+    (
+        "Muster 'x.json' mit --include=*.py warnt nicht",
+        False,
+        "grep -rn 'x.json' --include=*.py src",
+    ),
+    (
+        "Alternation mit \\| auf .py warnt nicht",
+        False,
+        "grep -n 'hooks.json\\|CLAUDE_PLUGIN_ROOT' a.py b.py",
+    ),
+    ("grep -F -n auf ci.yaml warnt weiter", True, "grep -F 'TODO' -n ci.yaml notes.md"),
+    ("grep -n auf package.json warnt weiter", True, "grep -n version package.json"),
+    ("grep -e auf package.json warnt weiter", True, "grep -e version package.json"),
 ]
 
 
@@ -646,6 +696,21 @@ TIMED_CASES += [
         "100 KB --exclude= ohne Leerzeichen vor .json",
         "DENY",
         "grep -o y " + repeated("--exclude=") + " b.json",
+    ),
+    (
+        "100 KB -e vor .json",
+        "DENY",
+        "grep -o " + repeated("-e x.json ") + " b.json",
+    ),
+    (
+        "100 KB offene Anfuehrungszeichen vor .json",
+        "DENY",
+        "grep -o " + repeated('"\\') + " b.json",
+    ),
+    (
+        "100 KB Anfuehrungszeichen mit | vor .json",
+        "DENY",
+        "grep -o " + repeated("'|\"|") + " b.json",
     ),
     (
         "100 KB < im Skriptlauf",
