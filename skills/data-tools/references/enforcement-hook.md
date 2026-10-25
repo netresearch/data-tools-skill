@@ -100,8 +100,9 @@ Each of these was a false positive first, then a rule:
   do not count, and without them neither does the first operand; a `|`
   inside the quoted pattern (`'a.json\|b'`) stays part of it. The other
   operands count: `grep -o version package.json` stays denied. A grep without
-  a file operand reads stdin and keeps its pattern counted, as do `xargs grep`
-  and `git grep`.
+  a file operand, or with `-` as its only one, reads stdin and keeps its
+  pattern counted, as do `xargs grep` and `git grep`. So does a stage whose
+  pattern word runs into an unquoted redirection (`version<package.json`).
 
 ## Verify
 

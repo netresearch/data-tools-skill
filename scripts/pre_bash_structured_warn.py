@@ -123,6 +123,9 @@ GREP_COMMAND = re.compile(r"[ef]?grep")
 # alternative starts on a character no other one accepts, as in _quoted().
 SHELL_WORD = re.compile(r"""(?:'[^']*'|"(?:[^"\\]|\\.)*"|\\.|[^\s'"\\])+""", re.DOTALL)
 REDIRECTION = re.compile(r"\d*[<>]")
+# A `<` or `>` outside quotes. In `version<package.json` it ends the pattern
+# and starts a redirection inside one shell word; such a stage is not split.
+UNQUOTED_ANGLE = re.compile(r"""'[^']*'|"(?:[^"\\]|\\.)*"|\\.|([<>])""", re.DOTALL)
 # Options that take a value, so the word after them is not the pattern.
 GREP_SHORT_WITH_VALUE = "efmABCdD"
 GREP_LONG_WITH_VALUE = {
@@ -523,6 +526,9 @@ def _drop_grep_patterns(stage: str) -> str:
             # `< in.json` or `<in.json`: a file grep reads, never the pattern.
             i += 2 if REDIRECTION.fullmatch(word) else 1
             continue
+        if any(m.group(1) for m in UNQUOTED_ANGLE.finditer(word)):
+            # A redirection glued to another word: every name counts.
+            return stage
         if options_done or not word.startswith("-") or word == "-":
             operands.append(i)
         elif word == "--":
@@ -546,8 +552,9 @@ def _drop_grep_patterns(stage: str) -> str:
         i += 1
     if not patterns and operands:
         patterns.append(operands.pop(0))
-    if not operands:
-        # grep reads stdin: keep the pattern in the check, as before.
+    if all(text[j] == "-" for j in operands):
+        # grep reads stdin (no operand, or only `-`): keep the pattern in the
+        # check, as before.
         return stage
     out = list(stage)
     for i in patterns:

@@ -516,6 +516,16 @@ VERDICT_CASES = [
         "DENY",
         "grep -o x.json notes.md '",
     ),
+    # A redirection glued to the pattern word ends the pattern there.
+    (
+        "version<package.json bleibt DENY",
+        "DENY",
+        "grep -o version<package.json /dev/stdin",
+    ),
+    ("'a<b' in Anfuehrungszeichen ist Muster", "durch", "grep -o 'x.json<b' notes.md"),
+    # `-` is standard input, not a file: the pattern still counts.
+    ("Operand - ist stdin", "DENY", "grep -o 'x.json' - <in.txt"),
+    ("- neben notes.md: Muster zaehlt nicht", "durch", "grep -o 'x.json' - notes.md"),
     # Nothing structured in sight.
     ("grep auf Textdatei", "durch", "grep -oE 'ERROR' app.log | head -3"),
     ("jq ist korrekt", "durch", "jq -r '.name' pkg.json"),
