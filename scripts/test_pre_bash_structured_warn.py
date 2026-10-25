@@ -523,6 +523,14 @@ VERDICT_CASES = [
         "grep -o version<package.json /dev/stdin",
     ),
     ("'a<b' in Anfuehrungszeichen ist Muster", "durch", "grep -o 'x.json<b' notes.md"),
+    # An attached pattern is blanked, the flags in front of it are not.
+    ("-oex.json: -o bleibt, Datei zaehlt", "DENY", "grep -oex.json package.json"),
+    (
+        "--regexp=x.json -o auf package.json",
+        "DENY",
+        "grep -o --regexp=x.json package.json",
+    ),
+    ("-oex.json auf .md", "durch", "grep -oex.json notes.md"),
     # `-` is standard input, not a file: the pattern still counts.
     ("Operand - ist stdin", "DENY", "grep -o 'x.json' - <in.txt"),
     ("- neben notes.md: Muster zaehlt nicht", "durch", "grep -o 'x.json' - notes.md"),

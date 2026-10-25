@@ -506,23 +506,30 @@ def _shell_word_spans(stage: str) -> list[tuple[int, int]] | None:
     return None if stage[pos:].strip() else words
 
 
-def _grep_option(word: str) -> tuple[bool, bool]:
-    """For one grep option word: (its value is the next word, it gives a pattern).
+def _grep_option(word: str) -> tuple[int, int | None]:
+    """For one grep option word: (words its value takes after this one, where
+    a pattern's blanking starts in the word that holds it, or None).
 
     A long option takes its value after `=` or as the next word; in a short
     cluster the first letter that takes a value ends it, with the value either
-    the rest of the word or, when the letter is last, the next word.
+    the rest of the word or, when the letter is last, the next word. The start
+    lets the caller blank `ex.json` in `-oex.json` and keep `-o`; it covers the
+    option letter too, so no dangling `-e` is left to take the next word, and
+    it is 0 when nothing would be left but the dash.
     """
     if word.startswith("--"):
         name, eq, _ = word[2:].partition("=")
         name = _grep_long_option(name)
         if name not in GREP_LONG_WITH_VALUE:
-            return False, False
-        return not eq, name in GREP_PATTERN_OPTIONS
+            return 0, None
+        return int(not eq), 0 if name in GREP_PATTERN_OPTIONS else None
     for k, letter in enumerate(word[1:], start=2):
         if letter in GREP_SHORT_WITH_VALUE:
-            return k == len(word), letter in GREP_PATTERN_OPTIONS
-    return False, False
+            step = int(k == len(word))
+            if letter not in GREP_PATTERN_OPTIONS:
+                return step, None
+            return step, 0 if step or k == 2 else k - 1
+    return 0, None
 
 
 def _redirection_width(word: str) -> int:
@@ -537,13 +544,16 @@ def _glued_redirection(word: str) -> bool:
     return any(m.group(1) for m in UNQUOTED_ANGLE.finditer(word))
 
 
-def _grep_roles(text: list[str], i: int) -> tuple[list[int], list[int]] | None:
-    """Indexes of grep's pattern words and file operands, from text[i] on.
+def _grep_roles(
+    text: list[str], i: int
+) -> tuple[list[tuple[int, int]], list[int]] | None:
+    """grep's patterns as (word index, start in word) and its file operands
+    as word indexes, from text[i] on.
 
     None when a word glues a redirection to something else (`version<a.json`):
     then the words cannot be told apart and every name counts.
     """
-    patterns: list[int] = []
+    patterns: list[tuple[int, int]] = []
     operands: list[int] = []
     options_done = False
     while i < len(text):
@@ -560,10 +570,10 @@ def _grep_roles(text: list[str], i: int) -> tuple[list[int], list[int]] | None:
         elif word == "--":
             options_done = True
         else:
-            next_word, is_pattern = _grep_option(word)
-            i += next_word
-            if is_pattern:
-                patterns.append(i)
+            step, start = _grep_option(word)
+            i += step
+            if start is not None:
+                patterns.append((i, start))
         i += 1
     return patterns, operands
 
@@ -590,15 +600,16 @@ def _drop_grep_patterns(stage: str) -> str:
         return stage
     patterns, operands = roles
     if not patterns and operands:  # no -e/-f: the first operand is the pattern
-        patterns.append(operands.pop(0))
+        patterns.append((operands.pop(0), 0))
     if all(text[j] == "-" for j in operands):
         # grep reads stdin (no operand, or only `-`): keep the pattern in the
         # check, as before.
         return stage
     out = list(stage)
-    for i in patterns:
+    for i, start in patterns:
         if i < len(words):
             a, b = words[i]
+            a += start
             out[a:b] = " " * (b - a)
     return "".join(out)
 
