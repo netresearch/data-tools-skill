@@ -7,7 +7,7 @@ license: "(MIT AND CC-BY-SA-4.0). See LICENSE-MIT and LICENSE-CC-BY-SA-4.0"
 compatibility: "Requires uv (runs the plugin's hook on Python 3.11 or later), jq, yq. Optional: dasel, qsv, mlr."
 metadata:
   author: Netresearch DTT GmbH
-  version: "1.9.7"
+  version: "1.9.8"
   repository: https://github.com/netresearch/data-tools-skill
 allowed-tools: Bash(jq:*) Bash(yq:*) Bash(dasel:*) Bash(mlr:*) Read Write
 ---
