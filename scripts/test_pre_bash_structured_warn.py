@@ -94,6 +94,54 @@ VERDICT_CASES = [
         "durch",
         "curl -s https://x/api | jq '.items | map(.id)' > ids.json",
     ),
+    # A source the filename scan cannot read is still a file: a variable,
+    # `$(…)`, an extensionless JSON config, a relative bare operand, or a
+    # file reader in front of the pipe (review of this PR, round 2).
+    (
+        "jq aus $CFG nach tmp.json bleibt gesperrt",
+        "DENY",
+        """jq '.a = 1' "$CFG" > tmp.json && mv tmp.json "$CFG\"""",
+    ),
+    (
+        "jq aus $F nach Zuweisung bleibt gesperrt",
+        "DENY",
+        """F=config.json; jq '.a = 1' "$F" > tmp.json""",
+    ),
+    (
+        "jq aus $(…) bleibt gesperrt",
+        "DENY",
+        """jq '.a = 1' "$(cat cfgpath)" > tmp.json""",
+    ),
+    (
+        "jq aus .eslintrc ohne Endung bleibt gesperrt",
+        "DENY",
+        "jq '.a = 1' .eslintrc > /tmp/x.json && mv /tmp/x.json .eslintrc",
+    ),
+    (
+        "jq aus nacktem Operanden bleibt gesperrt",
+        "DENY",
+        "cd conf && jq '.a = 1' app > out.json",
+    ),
+    (
+        "cat .eslintrc | jq bleibt gesperrt",
+        "DENY",
+        "cat .eslintrc | jq '.a = 1' > /tmp/x.json",
+    ),
+    (
+        "jq -n input aus $CFG bleibt gesperrt",
+        "DENY",
+        """jq -n 'input | .a = 1' "$CFG" > tmp.json""",
+    ),
+    (
+        "Pipe mit < $CFG bleibt gesperrt",
+        "DENY",
+        """curl -s https://x/api | jq '.a = 1' > tmp.json < "$CFG\"""",
+    ),
+    (
+        "jq -n --slurpfile aus $CFG bleibt gesperrt",
+        "DENY",
+        """jq -n --slurpfile a "$CFG" '$a[0]' > tmp.json""",
+    ),
     # Null input does not help when a structured file still reaches the
     # serializer: as an option value, on stdin through `<`, or through a pipe.
     (

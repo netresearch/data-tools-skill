@@ -804,18 +804,87 @@ def _unquoted_stages(text: str, breaks: re.Pattern = STAGE_BREAK):
     yield start, len(text)
 
 
-def _writes_new_document(stmt: str, target: re.Match) -> bool:
-    """True when the statement names no structured file besides its target.
+# jq builtins that read the input stream even under `-n`; the lookbehind keeps
+# the option `--null-input` itself from counting as one.
+READS_INPUT = re.compile(r"(?<!-)\binputs?\b")
+# Options that feed a JSON file into the program as data.
+FILE_AS_JSON_OPTION = re.compile(r"--(?:slurpfile|argfile)\b")
+# A pipe source that only copies a file onward; what it emits is that file.
+FILE_READERS = frozenset(
+    {
+        "cat",
+        "tac",
+        "head",
+        "tail",
+        "bat",
+        "less",
+        "more",
+        "sed",
+        "awk",
+        "grep",
+        "cut",
+        "sort",
+        "tr",
+        "jq",
+        "yq",
+        "dasel",
+    }
+)
+
+
+def _is_null_input_flag(word: str) -> bool:
+    """`--null-input`, `-n`, or a short-option cluster holding n (`-nc`).
+
+    Checked per word with string methods, not a regex: a long letter run
+    behind a single dash made `-[A-Za-z]*n[A-Za-z]*` backtrack quadratically.
+    """
+    if word == "--null-input":
+        return True
+    return (
+        len(word) > 1
+        and word[0] == "-"
+        and word[1] != "-"
+        and word[1:].isalpha()
+        and "n" in word[1:]
+    )
+
+
+def _first_command(stage: str) -> str:
+    """The command word of a stage, past `VAR=value` prefixes and any path."""
+    for word in stage.split():
+        if "=" in word and not word.startswith(("-", "'", '"')):
+            continue
+        return word.rsplit("/", 1)[-1]
+    return ""
+
+
+def _writes_new_document(
+    stmt: str, stages: list[tuple[int, int]], index: int, target: re.Match
+) -> bool:
+    """True when the serializer demonstrably reads no file the command names.
 
     The rule protects a hand-formatted file from passing through a serializer.
-    Where no structured file is read — a request body built with `jq -n`,
-    an API answer piped through jq into a scratch file — the redirect writes
-    a new document and nothing hand-formatted is lost. Any other structured
-    name, as the jq argument, after `<`, in a `cat` before the pipe or in
-    `--slurpfile`, keeps the statement a rewrite.
+    Two shapes write a new document instead: a serializer under null input
+    (`jq -n '{…}' > body.json`) that does not reach for the input stream or a
+    JSON file option, and a serializer fed through a pipe by a command that
+    is not a file reader (`gh api … | jq … > prs.json`). A bare operand, a
+    variable or `$(…)` as the source, a `<` redirect, or any other structured
+    filename in the statement keeps it a rewrite, because a path the scan
+    cannot read is still a path.
     """
     rest = stmt[: target.start()] + " " + stmt[target.end() :]
-    return not STRUCTURED_NAME.search(rest)
+    if STRUCTURED_NAME.search(rest):
+        return False
+    if _unquoted_cuts(stmt, re.compile("<")):
+        return False
+    start, end = stages[index]
+    stage = stmt[start:end]
+    if any(_is_null_input_flag(w) for w in stage.split()):
+        return not READS_INPUT.search(stage) and not FILE_AS_JSON_OPTION.search(stage)
+    # Without a pipe in front the first stage is the serializer itself, and
+    # jq, yq and dasel are in FILE_READERS: a bare operand stays a rewrite.
+    source = _first_command(stmt[stages[0][0] : stages[0][1]])
+    return bool(source) and source not in FILE_READERS
 
 
 REWRITE_ADVICE = (
@@ -840,14 +909,15 @@ def rewrites_structured(cmd: str) -> bool:
         for start, end in _unquoted_stages(stmt, REDIRECT_OR_STAGE_BREAK):
             if _in_order(stmt, start, end, YQ, INPLACE_FLAG) >= 0:
                 return True
-        for start, end in _unquoted_stages(stmt):
+        stages = list(_unquoted_stages(stmt))
+        for index, (start, end) in enumerate(stages):
             after_serializer = _in_order(stmt, start, end, SERIALIZER)
             if after_serializer < 0:
                 continue
             target = INTO_STRUCTURED_FILE.search(stmt, after_serializer, end)
             if target is None:
                 continue
-            if _writes_new_document(stmt, target):
+            if _writes_new_document(stmt, stages, index, target):
                 continue
             return True
     return False
