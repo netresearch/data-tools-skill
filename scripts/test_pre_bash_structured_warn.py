@@ -59,7 +59,7 @@ VERDICT_CASES = [
         "durch",
         "glab api projects/1 --yq '.path' -i",
     ),
-    # `jq -n` reads no input, so the redirect writes a fresh document and no
+    # A serializer that reads no structured file writes a new document: no
     # hand formatting can be lost. The first case is the request body this
     # gate denied in a session (2026-11-06), copied as it ran.
     (
@@ -80,23 +80,55 @@ VERDICT_CASES = [
         "jq -n --rawfile content composer.lock '{branch:\"b\", content:$content}' > /tmp/s/body.json",
     ),
     ("jq --null-input geht durch", "durch", "jq --null-input '{a:1}' > body.json"),
-    ("jq -nc gebuendelt geht durch", "durch", "jq -nc '{a:1}' > body.json"),
     ("yq -n nach .yaml geht durch", "durch", "yq -n '.a = 1' > fresh.yaml"),
-    # Null input does not help when a structured file is still read through
-    # the serializer: that copies its content in the tool's formatting.
+    # An API answer saved through jq is a new document as well (constructed
+    # from a review of this rule; before the quote-aware split these passed
+    # only because the `|` in the filter cut the stage).
+    (
+        "gh api | jq nach Scratch-json geht durch",
+        "durch",
+        "gh api repos/o/r/pulls | jq '[.[] | {number, title}]' > /tmp/prs.json",
+    ),
+    (
+        "curl | jq nach .json geht durch",
+        "durch",
+        "curl -s https://x/api | jq '.items | map(.id)' > ids.json",
+    ),
+    # Null input does not help when a structured file still reaches the
+    # serializer: as an option value, on stdin through `<`, or through a pipe.
     (
         "jq -n --slurpfile aus .json bleibt gesperrt",
         "DENY",
         "jq -n --slurpfile a in.json '$a[0] | .x = 1' > in.json",
     ),
     (
-        "jq -n vor einer zweiten Stufe mit Rewrite bleibt gesperrt",
+        "jq -n input mit < aus .json bleibt gesperrt",
+        "DENY",
+        "jq -n 'input + {a: 1}' > tmp.json < config.json",
+    ),
+    (
+        "cat .json | jq -n input bleibt gesperrt",
+        "DENY",
+        "cat config.json | jq -n 'input + {a: 1}' > tmp.json",
+    ),
+    (
+        "jq -n inputs mit < aus .json bleibt gesperrt",
+        "DENY",
+        "jq -n '[inputs]' > all.json < a.json",
+    ),
+    (
+        "cat .json | jq --indent nach .json bleibt gesperrt",
+        "DENY",
+        "cat in.json | jq --indent 4 '.a' > out.json",
+    ),
+    (
+        "jq -n vor einer zweiten Anweisung mit Rewrite bleibt gesperrt",
         "DENY",
         "jq -n '{a:1}' > fresh.json; jq '.b = 2' fresh.json > fresh.json",
     ),
-    # A `|` inside the quoted filter is part of the filter, not a pipe: split
-    # there, serializer and redirect fell into different stages and both
-    # rewrites went through (found while writing the --slurpfile case).
+    # A `|` or `;` inside the quoted filter is part of the filter: split there,
+    # serializer and redirect fell into different stages or statements and
+    # every one of these rewrites went through.
     (
         "jq mit | im Filter nach dieselbe json bleibt gesperrt",
         "DENY",
@@ -107,13 +139,27 @@ VERDICT_CASES = [
         "DENY",
         "yq '.a |= 1' -i config.yaml",
     ),
-    ("echtes | nach jq nach txt geht durch", "durch", "jq . a.json | wc -l > n.txt"),
-    # `-n` belongs to jq only when it stands as its own option word.
     (
-        "--indent n ist kein Null-Input",
+        "jq setpath mit ; im Filter bleibt gesperrt",
         "DENY",
-        "jq --indent 4 '.a' in.json > out.json",
+        """jq 'setpath(["a"]; 1)' a.json > a.json""",
     ),
+    (
+        "jq sub mit ; im Filter bleibt gesperrt",
+        "DENY",
+        """jq '.name |= sub("a"; "b")' package.json > package.json""",
+    ),
+    (
+        "yq with mit ; im Filter und -i bleibt gesperrt",
+        "DENY",
+        "yq 'with(.a; .b = 1)' -i config.yaml",
+    ),
+    (
+        "jq-Filter ueber zwei Zeilen bleibt gesperrt",
+        "DENY",
+        "jq '.a\n  | .b = 1' a.json > a.json",
+    ),
+    ("echtes | nach jq nach txt geht durch", "durch", "jq . a.json | wc -l > n.txt"),
     (
         "Rewrite mit Freigabe geht durch",
         "durch",

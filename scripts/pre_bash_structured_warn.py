@@ -732,24 +732,20 @@ INTO_STRUCTURED_FILE = re.compile(
 SPONGE_INTO_STRUCTURED_FILE = re.compile(
     r"\bsponge\s+[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b", re.IGNORECASE
 )
-# `jq -n` / `yq -n` build a document from nothing: there is no input file whose
-# formatting the redirect could destroy. A request body for an API that takes
-# arrays is written exactly this way (`jq -n --rawfile c x.lock '{…}' >
-# body.json`), and denying it pushed every such call through the
-# DATA_TOOLS_REWRITE_OK bypass. Short options may be clustered (`-nc`).
-NULL_INPUT_FLAG = re.compile(r"\s(?:--null-input|-(?!-)[A-Za-z]*n[A-Za-z]*)(?=\s|$)")
 STRUCTURED_NAME = re.compile(STRUCT, re.IGNORECASE)
+# Statement boundaries for the rewrite check, matched only outside quotes: jq
+# and yq filters carry `;` (`sub("a"; "b")`, `setpath([…]; 1)`, `with(.a; …)`)
+# and span lines, and STATEMENT_SPLIT cut them there.
+STATEMENT_BREAK = re.compile(r";|\n|&&|\|\|")
 
 
-def _unquoted_stages(text: str, breaks: re.Pattern = STAGE_BREAK):
-    """Like _stages(), but a break character inside quotes does not split.
+def _unquoted_cuts(text: str, breaks: re.Pattern) -> list[tuple[int, int]] | None:
+    """Spans of the break matches that sit outside quotes, or None.
 
-    A jq or yq filter is a quoted word that routinely carries `|` (`'.a | .b'`,
-    `'.x |= 1'`); split there, the serializer and its redirect land in
-    different stages and `jq '.a | .b = 1' a.json > a.json` went through.
     Bash quoting: no escape inside single quotes, a backslash escapes the next
-    character elsewhere. When a quote is never closed the text is not shell
-    the scan can read, so the plain split is used instead.
+    character elsewhere. One pass, so the time grows linearly with the text.
+    None means a quote is never closed: that is not shell the scan can read,
+    and the caller falls back to the quote-blind split it replaced.
     """
     cuts: list[tuple[int, int]] = []
     quote = ""
@@ -767,28 +763,59 @@ def _unquoted_stages(text: str, breaks: re.Pattern = STAGE_BREAK):
                 quote = ""
         elif ch in "'\"":
             quote = ch
-        elif breaks.match(ch):
-            cuts.append((i, i + 1))
+        else:
+            m = breaks.match(text, i)
+            if m:
+                cuts.append((i, m.end()))
+                i = m.end()
+                continue
         i += 1
-    if quote:
+    return None if quote else cuts
+
+
+def _unquoted_statements(text: str) -> list[str]:
+    """The statements of text, split at `;`, newlines, `&&`, `||` outside quotes."""
+    cuts = _unquoted_cuts(text, STATEMENT_BREAK)
+    if cuts is None:
+        return STATEMENT_SPLIT.split(text)
+    out, start = [], 0
+    for cut_start, cut_end in cuts:
+        out.append(text[start:cut_start])
+        start = cut_end
+    out.append(text[start:])
+    return out
+
+
+def _unquoted_stages(text: str, breaks: re.Pattern = STAGE_BREAK):
+    """Like _stages(), but a break character inside quotes does not split.
+
+    A jq or yq filter is a quoted word that routinely carries `|` (`'.a | .b'`,
+    `'.x |= 1'`); split there, the serializer and its redirect land in
+    different stages and `jq '.a | .b = 1' a.json > a.json` went through.
+    """
+    cuts = _unquoted_cuts(text, breaks)
+    if cuts is None:
         yield from _stages(text, breaks)
         return
     start = 0
     for cut_start, cut_end in cuts:
         yield start, cut_start
         start = cut_end
-    yield start, n
+    yield start, len(text)
 
 
-def _builds_from_nothing(stmt: str, after_serializer: int, redirect: int) -> bool:
-    """True when the serializer runs with null input and reads no structured file.
+def _writes_new_document(stmt: str, target: re.Match) -> bool:
+    """True when the statement names no structured file besides its target.
 
-    `--slurpfile a in.json` or `--argjson` from a file still copies a structured
-    file through the serializer, so any structured filename between the
-    serializer and the redirect keeps the statement a rewrite.
+    The rule protects a hand-formatted file from passing through a serializer.
+    Where no structured file is read — a request body built with `jq -n`,
+    an API answer piped through jq into a scratch file — the redirect writes
+    a new document and nothing hand-formatted is lost. Any other structured
+    name, as the jq argument, after `<`, in a `cat` before the pipe or in
+    `--slurpfile`, keeps the statement a rewrite.
     """
-    between = stmt[after_serializer:redirect]
-    return bool(NULL_INPUT_FLAG.search(between)) and not STRUCTURED_NAME.search(between)
+    rest = stmt[: target.start()] + " " + stmt[target.end() :]
+    return not STRUCTURED_NAME.search(rest)
 
 
 REWRITE_ADVICE = (
@@ -805,7 +832,7 @@ def rewrites_structured(cmd: str) -> bool:
     """True when a statement writes a structured file back through a serializer."""
     if "DATA_TOOLS_REWRITE_OK=1" in cmd:
         return False
-    for stmt in STATEMENT_SPLIT.split(_executable_text(cmd)):
+    for stmt in _unquoted_statements(_executable_text(cmd)):
         if ECHOES_TEXT.match(stmt):
             continue
         if SPONGE_INTO_STRUCTURED_FILE.search(stmt):
@@ -820,7 +847,7 @@ def rewrites_structured(cmd: str) -> bool:
             target = INTO_STRUCTURED_FILE.search(stmt, after_serializer, end)
             if target is None:
                 continue
-            if _builds_from_nothing(stmt, after_serializer, target.start()):
+            if _writes_new_document(stmt, target):
                 continue
             return True
     return False
