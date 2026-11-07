@@ -809,27 +809,38 @@ def _unquoted_stages(text: str, breaks: re.Pattern = STAGE_BREAK):
 READS_INPUT = re.compile(r"(?<!-)\binputs?\b")
 # Options that feed a JSON file into the program as data.
 FILE_AS_JSON_OPTION = re.compile(r"--(?:slurpfile|argfile)\b")
-# A pipe source that only copies a file onward; what it emits is that file.
-FILE_READERS = frozenset(
-    {
-        "cat",
-        "tac",
-        "head",
-        "tail",
-        "bat",
-        "less",
-        "more",
-        "sed",
-        "awk",
-        "grep",
-        "cut",
-        "sort",
-        "tr",
-        "jq",
-        "yq",
-        "dasel",
-    }
-)
+# Options whose value or positional arguments become JSON or raw file content
+# in the program. With a literal non-structured path (`--rawfile c
+# composer.lock`) they build a document; fed from `$…` or `$(…)` they can
+# carry any file the scan cannot name, so that combination stays a rewrite.
+CONTENT_OPTION = re.compile(r"--(?:argjson|rawfile|jsonargs)\b")
+# Pipe sources whose output is an API answer, not a file on disk. An
+# allow-list: a deny-list of readers misses wrappers (`env cat`, `sudo cat`)
+# and readers it never thought of (`git show`, `xargs cat`, `ssh … cat`).
+API_SOURCES = frozenset({"gh", "glab", "curl", "wget", "http", "https", "xh"})
+
+
+def _expands_outside_single_quotes(text: str) -> bool:
+    """True when text has a `$` or backtick expansion outside single quotes."""
+    quote = ""
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote == "'":
+            if ch == "'":
+                quote = ""
+        elif ch == "\\":
+            i += 1
+        elif ch in "$`":
+            return True
+        elif quote == '"':
+            if ch == '"':
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+        i += 1
+    return False
 
 
 def _is_null_input_flag(word: str) -> bool:
@@ -861,16 +872,18 @@ def _first_command(stage: str) -> str:
 def _writes_new_document(
     stmt: str, stages: list[tuple[int, int]], index: int, target: re.Match
 ) -> bool:
-    """True when the serializer demonstrably reads no file the command names.
+    """True when the serializer demonstrably reads no file.
 
     The rule protects a hand-formatted file from passing through a serializer.
-    Two shapes write a new document instead: a serializer under null input
-    (`jq -n '{…}' > body.json`) that does not reach for the input stream or a
-    JSON file option, and a serializer fed through a pipe by a command that
-    is not a file reader (`gh api … | jq … > prs.json`). A bare operand, a
-    variable or `$(…)` as the source, a `<` redirect, or any other structured
-    filename in the statement keeps it a rewrite, because a path the scan
-    cannot read is still a path.
+    Two shapes write a new document instead. A serializer under null input
+    (`jq -n '{…}' > body.json`) that neither reads the input stream nor takes
+    a JSON file option, and whose content options (`--argjson`, `--rawfile`,
+    `--jsonargs`) carry no `$` expansion. Or a serializer fed through a pipe
+    whose first command is an API client (`gh api … | jq … > prs.json`).
+    Everything else stays a rewrite — a bare operand, a variable or `$(…)`
+    as the source, a wrapper around a reader — and so does any statement with
+    a `<` redirect or another structured filename: a path the scan cannot
+    read is still a path.
     """
     rest = stmt[: target.start()] + " " + stmt[target.end() :]
     if STRUCTURED_NAME.search(rest):
@@ -880,11 +893,14 @@ def _writes_new_document(
     start, end = stages[index]
     stage = stmt[start:end]
     if any(_is_null_input_flag(w) for w in stage.split()):
-        return not READS_INPUT.search(stage) and not FILE_AS_JSON_OPTION.search(stage)
-    # Without a pipe in front the first stage is the serializer itself, and
-    # jq, yq and dasel are in FILE_READERS: a bare operand stays a rewrite.
-    source = _first_command(stmt[stages[0][0] : stages[0][1]])
-    return bool(source) and source not in FILE_READERS
+        if READS_INPUT.search(stage) or FILE_AS_JSON_OPTION.search(stage):
+            return False
+        return not (
+            CONTENT_OPTION.search(stage) and _expands_outside_single_quotes(stage)
+        )
+    # Without a pipe in front the first stage is the serializer itself, which
+    # is no API client, so a bare operand stays a rewrite.
+    return _first_command(stmt[stages[0][0] : stages[0][1]]) in API_SOURCES
 
 
 REWRITE_ADVICE = (

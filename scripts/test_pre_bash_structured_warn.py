@@ -127,6 +127,38 @@ VERDICT_CASES = [
         "DENY",
         "cat .eslintrc | jq '.a = 1' > /tmp/x.json",
     ),
+    # Round 3: content options fed from an expansion, and pipe sources that
+    # are not API clients, can carry a file the scan cannot name.
+    (
+        "jq -n --argjson aus $(cat $CFG) bleibt gesperrt",
+        "DENY",
+        """jq -n --argjson c "$(cat "$CFG")" '$c + {a: 1}' > tmp.json""",
+    ),
+    (
+        "jq -n --rawfile aus $CFG bleibt gesperrt",
+        "DENY",
+        """jq -n --rawfile c "$CFG" '$c | fromjson | .a = 1' > tmp.json""",
+    ),
+    (
+        "jq -n --arg aus $TITLE geht durch",
+        "durch",
+        """jq -n --arg t "$TITLE" '{title: $t}' > body.json""",
+    ),
+    (
+        "env cat $CFG | jq bleibt gesperrt",
+        "DENY",
+        """env cat "$CFG" | jq '.a = 1' > tmp.json""",
+    ),
+    (
+        "git show | jq bleibt gesperrt",
+        "DENY",
+        """git show "HEAD:$CFG" | jq '.a = 1' > tmp.json""",
+    ),
+    (
+        "glab api | jq nach .json geht durch",
+        "durch",
+        "glab api projects/1/merge_requests | jq 'map(.iid)' > mrs.json",
+    ),
     (
         "jq -n input aus $CFG bleibt gesperrt",
         "DENY",
