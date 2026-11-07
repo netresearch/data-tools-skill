@@ -59,6 +59,61 @@ VERDICT_CASES = [
         "durch",
         "glab api projects/1 --yq '.path' -i",
     ),
+    # `jq -n` reads no input, so the redirect writes a fresh document and no
+    # hand formatting can be lost. The first case is the request body this
+    # gate denied in a session (2026-11-06), copied as it ran.
+    (
+        "jq -n Request-Body nach .json geht durch",
+        "durch",
+        (
+            """jq -n '{source_branch:"fix/drop-pycache", target_branch:"main", """
+            """title:"Draft: fix: drop a committed bytecode file and ignore __pycache__", """
+            """remove_source_branch:true, description:"After this merge the repository """
+            """no longer contains `evals/__pycache__/answerable_search.cpython-315.pyc`, """
+            """which 567e64a committed by accident, and `.gitignore` excludes """
+            """`__pycache__/`."}' > /tmp/s/rel/mr-pycache.json"""
+        ),
+    ),
+    (
+        "jq -n --rawfile nach .json geht durch",
+        "durch",
+        "jq -n --rawfile content composer.lock '{branch:\"b\", content:$content}' > /tmp/s/body.json",
+    ),
+    ("jq --null-input geht durch", "durch", "jq --null-input '{a:1}' > body.json"),
+    ("jq -nc gebuendelt geht durch", "durch", "jq -nc '{a:1}' > body.json"),
+    ("yq -n nach .yaml geht durch", "durch", "yq -n '.a = 1' > fresh.yaml"),
+    # Null input does not help when a structured file is still read through
+    # the serializer: that copies its content in the tool's formatting.
+    (
+        "jq -n --slurpfile aus .json bleibt gesperrt",
+        "DENY",
+        "jq -n --slurpfile a in.json '$a[0] | .x = 1' > in.json",
+    ),
+    (
+        "jq -n vor einer zweiten Stufe mit Rewrite bleibt gesperrt",
+        "DENY",
+        "jq -n '{a:1}' > fresh.json; jq '.b = 2' fresh.json > fresh.json",
+    ),
+    # A `|` inside the quoted filter is part of the filter, not a pipe: split
+    # there, serializer and redirect fell into different stages and both
+    # rewrites went through (found while writing the --slurpfile case).
+    (
+        "jq mit | im Filter nach dieselbe json bleibt gesperrt",
+        "DENY",
+        "jq '.a | .b = 1' a.json > a.json",
+    ),
+    (
+        "yq mit |= im Filter und -i dahinter bleibt gesperrt",
+        "DENY",
+        "yq '.a |= 1' -i config.yaml",
+    ),
+    ("echtes | nach jq nach txt geht durch", "durch", "jq . a.json | wc -l > n.txt"),
+    # `-n` belongs to jq only when it stands as its own option word.
+    (
+        "--indent n ist kein Null-Input",
+        "DENY",
+        "jq --indent 4 '.a' in.json > out.json",
+    ),
     (
         "Rewrite mit Freigabe geht durch",
         "durch",

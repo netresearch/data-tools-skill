@@ -732,6 +732,65 @@ INTO_STRUCTURED_FILE = re.compile(
 SPONGE_INTO_STRUCTURED_FILE = re.compile(
     r"\bsponge\s+[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b", re.IGNORECASE
 )
+# `jq -n` / `yq -n` build a document from nothing: there is no input file whose
+# formatting the redirect could destroy. A request body for an API that takes
+# arrays is written exactly this way (`jq -n --rawfile c x.lock '{…}' >
+# body.json`), and denying it pushed every such call through the
+# DATA_TOOLS_REWRITE_OK bypass. Short options may be clustered (`-nc`).
+NULL_INPUT_FLAG = re.compile(r"\s(?:--null-input|-(?!-)[A-Za-z]*n[A-Za-z]*)(?=\s|$)")
+STRUCTURED_NAME = re.compile(STRUCT, re.IGNORECASE)
+
+
+def _unquoted_stages(text: str, breaks: re.Pattern = STAGE_BREAK):
+    """Like _stages(), but a break character inside quotes does not split.
+
+    A jq or yq filter is a quoted word that routinely carries `|` (`'.a | .b'`,
+    `'.x |= 1'`); split there, the serializer and its redirect land in
+    different stages and `jq '.a | .b = 1' a.json > a.json` went through.
+    Bash quoting: no escape inside single quotes, a backslash escapes the next
+    character elsewhere. When a quote is never closed the text is not shell
+    the scan can read, so the plain split is used instead.
+    """
+    cuts: list[tuple[int, int]] = []
+    quote = ""
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote == "'":
+            if ch == "'":
+                quote = ""
+        elif ch == "\\":
+            i += 1
+        elif quote == '"':
+            if ch == '"':
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+        elif breaks.match(ch):
+            cuts.append((i, i + 1))
+        i += 1
+    if quote:
+        yield from _stages(text, breaks)
+        return
+    start = 0
+    for cut_start, cut_end in cuts:
+        yield start, cut_start
+        start = cut_end
+    yield start, n
+
+
+def _builds_from_nothing(stmt: str, after_serializer: int, redirect: int) -> bool:
+    """True when the serializer runs with null input and reads no structured file.
+
+    `--slurpfile a in.json` or `--argjson` from a file still copies a structured
+    file through the serializer, so any structured filename between the
+    serializer and the redirect keeps the statement a rewrite.
+    """
+    between = stmt[after_serializer:redirect]
+    return bool(NULL_INPUT_FLAG.search(between)) and not STRUCTURED_NAME.search(between)
+
+
 REWRITE_ADVICE = (
     "Writing a structured file back through a serializer (yq -i, jq/yq > file, sponge) "
     "rewrites the whole file in the tool's formatting — indentation, blank lines, key order "
@@ -751,12 +810,19 @@ def rewrites_structured(cmd: str) -> bool:
             continue
         if SPONGE_INTO_STRUCTURED_FILE.search(stmt):
             return True
-        for start, end in _stages(stmt, REDIRECT_OR_STAGE_BREAK):
+        for start, end in _unquoted_stages(stmt, REDIRECT_OR_STAGE_BREAK):
             if _in_order(stmt, start, end, YQ, INPLACE_FLAG) >= 0:
                 return True
-        for start, end in _stages(stmt):
-            if _in_order(stmt, start, end, SERIALIZER, INTO_STRUCTURED_FILE) >= 0:
-                return True
+        for start, end in _unquoted_stages(stmt):
+            after_serializer = _in_order(stmt, start, end, SERIALIZER)
+            if after_serializer < 0:
+                continue
+            target = INTO_STRUCTURED_FILE.search(stmt, after_serializer, end)
+            if target is None:
+                continue
+            if _builds_from_nothing(stmt, after_serializer, target.start()):
+                continue
+            return True
     return False
 
 
