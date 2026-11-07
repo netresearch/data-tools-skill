@@ -159,6 +159,29 @@ VERDICT_CASES = [
         "durch",
         "glab api projects/1/merge_requests | jq 'map(.iid)' > mrs.json",
     ),
+    # Review on the PR: yq's load(), a jq program from a file, a stage
+    # between the API client and jq, and `&` instead of a pipe.
+    (
+        "yq -n mit load() bleibt gesperrt",
+        "DENY",
+        """yq -n 'load("config") | .a = 1' > tmp.yaml""",
+    ),
+    ("jq -n -f Programmdatei bleibt gesperrt", "DENY", "jq -n -f prog.jq > out.json"),
+    (
+        "jq -n --from-file bleibt gesperrt",
+        "DENY",
+        "jq -n --from-file prog.jq > out.json",
+    ),
+    (
+        "curl | cat $CFG | jq bleibt gesperrt",
+        "DENY",
+        """curl -s https://x/api | cat "$CFG" | jq '.a = 1' > tmp.json""",
+    ),
+    (
+        "curl & jq $CFG bleibt gesperrt",
+        "DENY",
+        """curl -s https://x/api & jq '.a = 1' "$CFG" > tmp.json""",
+    ),
     (
         "jq -n input aus $CFG bleibt gesperrt",
         "DENY",

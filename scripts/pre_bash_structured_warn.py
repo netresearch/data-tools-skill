@@ -804,11 +804,15 @@ def _unquoted_stages(text: str, breaks: re.Pattern = STAGE_BREAK):
     yield start, len(text)
 
 
-# jq builtins that read the input stream even under `-n`; the lookbehind keeps
-# the option `--null-input` itself from counting as one.
-READS_INPUT = re.compile(r"(?<!-)\binputs?\b")
-# Options that feed a JSON file into the program as data.
-FILE_AS_JSON_OPTION = re.compile(r"--(?:slurpfile|argfile)\b")
+# What reads data even under `-n`: jq's `input`/`inputs` builtins and yq's
+# `load…(` operators. The lookbehind keeps the option `--null-input` itself
+# from counting as one.
+READS_INPUT = re.compile(r"(?<!-)\binputs?\b|\bload(?:_\w+)?\s*\(")
+# Options that feed a file into the program: JSON data, or the program itself
+# (`-f`/`--from-file`), which can call `inputs` where the scan cannot see it.
+FILE_AS_JSON_OPTION = re.compile(
+    r"--(?:slurpfile|argfile|from-file)\b|(?<![\w-])-f(?=\s|$)"
+)
 # Options whose value or positional arguments become JSON or raw file content
 # in the program. With a literal non-structured path (`--rawfile c
 # composer.lock`) they build a document; fed from `$…` or `$(…)` they can
@@ -898,8 +902,13 @@ def _writes_new_document(
         return not (
             CONTENT_OPTION.search(stage) and _expands_outside_single_quotes(stage)
         )
-    # Without a pipe in front the first stage is the serializer itself, which
-    # is no API client, so a bare operand stays a rewrite.
+    # The API client must pipe straight into the serializer: a stage in between
+    # (`curl … | cat "$CFG" | jq …`) can replace the input, and `&` runs the
+    # client beside the serializer instead of feeding it. Without a pipe in
+    # front the first stage is the serializer itself, so a bare operand stays a
+    # rewrite.
+    if index != 1 or stmt[stages[0][1]] != "|":
+        return False
     return _first_command(stmt[stages[0][0] : stages[0][1]]) in API_SOURCES
 
 
