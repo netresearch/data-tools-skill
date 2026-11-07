@@ -732,6 +732,186 @@ INTO_STRUCTURED_FILE = re.compile(
 SPONGE_INTO_STRUCTURED_FILE = re.compile(
     r"\bsponge\s+[\w./-]+\.(?:json|jsonl|ya?ml|toml)\b", re.IGNORECASE
 )
+STRUCTURED_NAME = re.compile(STRUCT, re.IGNORECASE)
+# Statement boundaries for the rewrite check, matched only outside quotes: jq
+# and yq filters carry `;` (`sub("a"; "b")`, `setpath([…]; 1)`, `with(.a; …)`)
+# and span lines, and STATEMENT_SPLIT cut them there.
+STATEMENT_BREAK = re.compile(r";|\n|&&|\|\|")
+
+
+def _unquoted_cuts(text: str, breaks: re.Pattern) -> list[tuple[int, int]] | None:
+    """Spans of the break matches that sit outside quotes, or None.
+
+    Bash quoting: no escape inside single quotes, a backslash escapes the next
+    character elsewhere. One pass, so the time grows linearly with the text.
+    None means a quote is never closed: that is not shell the scan can read,
+    and the caller falls back to the quote-blind split it replaced.
+    """
+    cuts: list[tuple[int, int]] = []
+    quote = ""
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote == "'":
+            if ch == "'":
+                quote = ""
+        elif ch == "\\":
+            i += 1
+        elif quote == '"':
+            if ch == '"':
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+        else:
+            m = breaks.match(text, i)
+            if m:
+                cuts.append((i, m.end()))
+                i = m.end()
+                continue
+        i += 1
+    return None if quote else cuts
+
+
+def _unquoted_statements(text: str) -> list[str]:
+    """The statements of text, split at `;`, newlines, `&&`, `||` outside quotes."""
+    cuts = _unquoted_cuts(text, STATEMENT_BREAK)
+    if cuts is None:
+        return STATEMENT_SPLIT.split(text)
+    out, start = [], 0
+    for cut_start, cut_end in cuts:
+        out.append(text[start:cut_start])
+        start = cut_end
+    out.append(text[start:])
+    return out
+
+
+def _unquoted_stages(text: str, breaks: re.Pattern = STAGE_BREAK):
+    """Like _stages(), but a break character inside quotes does not split.
+
+    A jq or yq filter is a quoted word that routinely carries `|` (`'.a | .b'`,
+    `'.x |= 1'`); split there, the serializer and its redirect land in
+    different stages and `jq '.a | .b = 1' a.json > a.json` went through.
+    """
+    cuts = _unquoted_cuts(text, breaks)
+    if cuts is None:
+        yield from _stages(text, breaks)
+        return
+    start = 0
+    for cut_start, cut_end in cuts:
+        yield start, cut_start
+        start = cut_end
+    yield start, len(text)
+
+
+# What reads data even under `-n`: jq's `input`/`inputs` builtins and yq's
+# `load…(` operators. The lookbehind keeps the option `--null-input` itself
+# from counting as one.
+READS_INPUT = re.compile(r"(?<!-)\binputs?\b|\bload(?:_\w+)?\s*\(")
+# Options that feed a file into the program: JSON data, or the program itself
+# (`-f`/`--from-file`), which can call `inputs` where the scan cannot see it.
+FILE_AS_JSON_OPTION = re.compile(
+    r"--(?:slurpfile|argfile|from-file)\b|(?<![\w-])-f(?=\s|$)"
+)
+# Options whose value or positional arguments become JSON or raw file content
+# in the program. With a literal non-structured path (`--rawfile c
+# composer.lock`) they build a document; fed from `$…` or `$(…)` they can
+# carry any file the scan cannot name, so that combination stays a rewrite.
+CONTENT_OPTION = re.compile(r"--(?:argjson|rawfile|jsonargs)\b")
+# Pipe sources whose output is an API answer, not a file on disk. An
+# allow-list: a deny-list of readers misses wrappers (`env cat`, `sudo cat`)
+# and readers it never thought of (`git show`, `xargs cat`, `ssh … cat`).
+API_SOURCES = frozenset({"gh", "glab", "curl", "wget", "http", "https", "xh"})
+
+
+def _expands_outside_single_quotes(text: str) -> bool:
+    """True when text has a `$` or backtick expansion outside single quotes."""
+    quote = ""
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote == "'":
+            if ch == "'":
+                quote = ""
+        elif ch == "\\":
+            i += 1
+        elif ch in "$`":
+            return True
+        elif quote == '"':
+            if ch == '"':
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+        i += 1
+    return False
+
+
+def _is_null_input_flag(word: str) -> bool:
+    """`--null-input`, `-n`, or a short-option cluster holding n (`-nc`).
+
+    Checked per word with string methods, not a regex: a long letter run
+    behind a single dash made `-[A-Za-z]*n[A-Za-z]*` backtrack quadratically.
+    """
+    if word == "--null-input":
+        return True
+    return (
+        len(word) > 1
+        and word[0] == "-"
+        and word[1] != "-"
+        and word[1:].isalpha()
+        and "n" in word[1:]
+    )
+
+
+def _first_command(stage: str) -> str:
+    """The command word of a stage, past `VAR=value` prefixes and any path."""
+    for word in stage.split():
+        if "=" in word and not word.startswith(("-", "'", '"')):
+            continue
+        return word.rsplit("/", 1)[-1]
+    return ""
+
+
+def _writes_new_document(
+    stmt: str, stages: list[tuple[int, int]], index: int, target: re.Match
+) -> bool:
+    """True when the serializer demonstrably reads no file.
+
+    The rule protects a hand-formatted file from passing through a serializer.
+    Two shapes write a new document instead. A serializer under null input
+    (`jq -n '{…}' > body.json`) that neither reads the input stream nor takes
+    a JSON file option, and whose content options (`--argjson`, `--rawfile`,
+    `--jsonargs`) carry no `$` expansion. Or a serializer fed through a pipe
+    whose first command is an API client (`gh api … | jq … > prs.json`).
+    Everything else stays a rewrite — a bare operand, a variable or `$(…)`
+    as the source, a wrapper around a reader — and so does any statement with
+    a `<` redirect or another structured filename: a path the scan cannot
+    read is still a path.
+    """
+    rest = stmt[: target.start()] + " " + stmt[target.end() :]
+    if STRUCTURED_NAME.search(rest):
+        return False
+    if _unquoted_cuts(stmt, re.compile("<")):
+        return False
+    start, end = stages[index]
+    stage = stmt[start:end]
+    if any(_is_null_input_flag(w) for w in stage.split()):
+        if READS_INPUT.search(stage) or FILE_AS_JSON_OPTION.search(stage):
+            return False
+        return not (
+            CONTENT_OPTION.search(stage) and _expands_outside_single_quotes(stage)
+        )
+    # The API client must pipe straight into the serializer: a stage in between
+    # (`curl … | cat "$CFG" | jq …`) can replace the input, and `&` runs the
+    # client beside the serializer instead of feeding it. Without a pipe in
+    # front the first stage is the serializer itself, so a bare operand stays a
+    # rewrite.
+    if index != 1 or stmt[stages[0][1]] != "|":
+        return False
+    return _first_command(stmt[stages[0][0] : stages[0][1]]) in API_SOURCES
+
+
 REWRITE_ADVICE = (
     "Writing a structured file back through a serializer (yq -i, jq/yq > file, sponge) "
     "rewrites the whole file in the tool's formatting — indentation, blank lines, key order "
@@ -746,17 +926,25 @@ def rewrites_structured(cmd: str) -> bool:
     """True when a statement writes a structured file back through a serializer."""
     if "DATA_TOOLS_REWRITE_OK=1" in cmd:
         return False
-    for stmt in STATEMENT_SPLIT.split(_executable_text(cmd)):
+    for stmt in _unquoted_statements(_executable_text(cmd)):
         if ECHOES_TEXT.match(stmt):
             continue
         if SPONGE_INTO_STRUCTURED_FILE.search(stmt):
             return True
-        for start, end in _stages(stmt, REDIRECT_OR_STAGE_BREAK):
+        for start, end in _unquoted_stages(stmt, REDIRECT_OR_STAGE_BREAK):
             if _in_order(stmt, start, end, YQ, INPLACE_FLAG) >= 0:
                 return True
-        for start, end in _stages(stmt):
-            if _in_order(stmt, start, end, SERIALIZER, INTO_STRUCTURED_FILE) >= 0:
-                return True
+        stages = list(_unquoted_stages(stmt))
+        for index, (start, end) in enumerate(stages):
+            after_serializer = _in_order(stmt, start, end, SERIALIZER)
+            if after_serializer < 0:
+                continue
+            target = INTO_STRUCTURED_FILE.search(stmt, after_serializer, end)
+            if target is None:
+                continue
+            if _writes_new_document(stmt, stages, index, target):
+                continue
+            return True
     return False
 
 

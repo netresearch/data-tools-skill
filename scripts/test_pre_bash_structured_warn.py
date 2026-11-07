@@ -59,6 +59,210 @@ VERDICT_CASES = [
         "durch",
         "glab api projects/1 --yq '.path' -i",
     ),
+    # A serializer that reads no structured file writes a new document: no
+    # hand formatting can be lost. The first case is the request body this
+    # gate denied in a session (2026-11-06), copied as it ran.
+    (
+        "jq -n Request-Body nach .json geht durch",
+        "durch",
+        (
+            """jq -n '{source_branch:"fix/drop-pycache", target_branch:"main", """
+            """title:"Draft: fix: drop a committed bytecode file and ignore __pycache__", """
+            """remove_source_branch:true, description:"After this merge the repository """
+            """no longer contains `evals/__pycache__/answerable_search.cpython-315.pyc`, """
+            """which 567e64a committed by accident, and `.gitignore` excludes """
+            """`__pycache__/`."}' > /tmp/s/rel/mr-pycache.json"""
+        ),
+    ),
+    (
+        "jq -n --rawfile nach .json geht durch",
+        "durch",
+        "jq -n --rawfile content composer.lock '{branch:\"b\", content:$content}' > /tmp/s/body.json",
+    ),
+    ("jq --null-input geht durch", "durch", "jq --null-input '{a:1}' > body.json"),
+    ("yq -n nach .yaml geht durch", "durch", "yq -n '.a = 1' > fresh.yaml"),
+    # An API answer saved through jq is a new document as well (constructed
+    # from a review of this rule; before the quote-aware split these passed
+    # only because the `|` in the filter cut the stage).
+    (
+        "gh api | jq nach Scratch-json geht durch",
+        "durch",
+        "gh api repos/o/r/pulls | jq '[.[] | {number, title}]' > /tmp/prs.json",
+    ),
+    (
+        "curl | jq nach .json geht durch",
+        "durch",
+        "curl -s https://x/api | jq '.items | map(.id)' > ids.json",
+    ),
+    # A source the filename scan cannot read is still a file: a variable,
+    # `$(…)`, an extensionless JSON config, a relative bare operand, or a
+    # file reader in front of the pipe (review of this PR, round 2).
+    (
+        "jq aus $CFG nach tmp.json bleibt gesperrt",
+        "DENY",
+        """jq '.a = 1' "$CFG" > tmp.json && mv tmp.json "$CFG\"""",
+    ),
+    (
+        "jq aus $F nach Zuweisung bleibt gesperrt",
+        "DENY",
+        """F=config.json; jq '.a = 1' "$F" > tmp.json""",
+    ),
+    (
+        "jq aus $(…) bleibt gesperrt",
+        "DENY",
+        """jq '.a = 1' "$(cat cfgpath)" > tmp.json""",
+    ),
+    (
+        "jq aus .eslintrc ohne Endung bleibt gesperrt",
+        "DENY",
+        "jq '.a = 1' .eslintrc > /tmp/x.json && mv /tmp/x.json .eslintrc",
+    ),
+    (
+        "jq aus nacktem Operanden bleibt gesperrt",
+        "DENY",
+        "cd conf && jq '.a = 1' app > out.json",
+    ),
+    (
+        "cat .eslintrc | jq bleibt gesperrt",
+        "DENY",
+        "cat .eslintrc | jq '.a = 1' > /tmp/x.json",
+    ),
+    # Round 3: content options fed from an expansion, and pipe sources that
+    # are not API clients, can carry a file the scan cannot name.
+    (
+        "jq -n --argjson aus $(cat $CFG) bleibt gesperrt",
+        "DENY",
+        """jq -n --argjson c "$(cat "$CFG")" '$c + {a: 1}' > tmp.json""",
+    ),
+    (
+        "jq -n --rawfile aus $CFG bleibt gesperrt",
+        "DENY",
+        """jq -n --rawfile c "$CFG" '$c | fromjson | .a = 1' > tmp.json""",
+    ),
+    (
+        "jq -n --arg aus $TITLE geht durch",
+        "durch",
+        """jq -n --arg t "$TITLE" '{title: $t}' > body.json""",
+    ),
+    (
+        "env cat $CFG | jq bleibt gesperrt",
+        "DENY",
+        """env cat "$CFG" | jq '.a = 1' > tmp.json""",
+    ),
+    (
+        "git show | jq bleibt gesperrt",
+        "DENY",
+        """git show "HEAD:$CFG" | jq '.a = 1' > tmp.json""",
+    ),
+    (
+        "glab api | jq nach .json geht durch",
+        "durch",
+        "glab api projects/1/merge_requests | jq 'map(.iid)' > mrs.json",
+    ),
+    # Review on the PR: yq's load(), a jq program from a file, a stage
+    # between the API client and jq, and `&` instead of a pipe.
+    (
+        "yq -n mit load() bleibt gesperrt",
+        "DENY",
+        """yq -n 'load("config") | .a = 1' > tmp.yaml""",
+    ),
+    ("jq -n -f Programmdatei bleibt gesperrt", "DENY", "jq -n -f prog.jq > out.json"),
+    (
+        "jq -n --from-file bleibt gesperrt",
+        "DENY",
+        "jq -n --from-file prog.jq > out.json",
+    ),
+    (
+        "curl | cat $CFG | jq bleibt gesperrt",
+        "DENY",
+        """curl -s https://x/api | cat "$CFG" | jq '.a = 1' > tmp.json""",
+    ),
+    (
+        "curl & jq $CFG bleibt gesperrt",
+        "DENY",
+        """curl -s https://x/api & jq '.a = 1' "$CFG" > tmp.json""",
+    ),
+    (
+        "jq -n input aus $CFG bleibt gesperrt",
+        "DENY",
+        """jq -n 'input | .a = 1' "$CFG" > tmp.json""",
+    ),
+    (
+        "Pipe mit < $CFG bleibt gesperrt",
+        "DENY",
+        """curl -s https://x/api | jq '.a = 1' > tmp.json < "$CFG\"""",
+    ),
+    (
+        "jq -n --slurpfile aus $CFG bleibt gesperrt",
+        "DENY",
+        """jq -n --slurpfile a "$CFG" '$a[0]' > tmp.json""",
+    ),
+    # Null input does not help when a structured file still reaches the
+    # serializer: as an option value, on stdin through `<`, or through a pipe.
+    (
+        "jq -n --slurpfile aus .json bleibt gesperrt",
+        "DENY",
+        "jq -n --slurpfile a in.json '$a[0] | .x = 1' > in.json",
+    ),
+    (
+        "jq -n input mit < aus .json bleibt gesperrt",
+        "DENY",
+        "jq -n 'input + {a: 1}' > tmp.json < config.json",
+    ),
+    (
+        "cat .json | jq -n input bleibt gesperrt",
+        "DENY",
+        "cat config.json | jq -n 'input + {a: 1}' > tmp.json",
+    ),
+    (
+        "jq -n inputs mit < aus .json bleibt gesperrt",
+        "DENY",
+        "jq -n '[inputs]' > all.json < a.json",
+    ),
+    (
+        "cat .json | jq --indent nach .json bleibt gesperrt",
+        "DENY",
+        "cat in.json | jq --indent 4 '.a' > out.json",
+    ),
+    (
+        "jq -n vor einer zweiten Anweisung mit Rewrite bleibt gesperrt",
+        "DENY",
+        "jq -n '{a:1}' > fresh.json; jq '.b = 2' fresh.json > fresh.json",
+    ),
+    # A `|` or `;` inside the quoted filter is part of the filter: split there,
+    # serializer and redirect fell into different stages or statements and
+    # every one of these rewrites went through.
+    (
+        "jq mit | im Filter nach dieselbe json bleibt gesperrt",
+        "DENY",
+        "jq '.a | .b = 1' a.json > a.json",
+    ),
+    (
+        "yq mit |= im Filter und -i dahinter bleibt gesperrt",
+        "DENY",
+        "yq '.a |= 1' -i config.yaml",
+    ),
+    (
+        "jq setpath mit ; im Filter bleibt gesperrt",
+        "DENY",
+        """jq 'setpath(["a"]; 1)' a.json > a.json""",
+    ),
+    (
+        "jq sub mit ; im Filter bleibt gesperrt",
+        "DENY",
+        """jq '.name |= sub("a"; "b")' package.json > package.json""",
+    ),
+    (
+        "yq with mit ; im Filter und -i bleibt gesperrt",
+        "DENY",
+        "yq 'with(.a; .b = 1)' -i config.yaml",
+    ),
+    (
+        "jq-Filter ueber zwei Zeilen bleibt gesperrt",
+        "DENY",
+        "jq '.a\n  | .b = 1' a.json > a.json",
+    ),
+    ("echtes | nach jq nach txt geht durch", "durch", "jq . a.json | wc -l > n.txt"),
     (
         "Rewrite mit Freigabe geht durch",
         "durch",
