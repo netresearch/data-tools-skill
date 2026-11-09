@@ -699,8 +699,12 @@ def _substitution_bodies(text: str) -> list[str]:
     and deep nesting costs linear time, not a recursion per level. `$((…))`
     is read as a substitution whose body is `(…)`, an arithmetic expression
     no check matches. A substitution that never closes runs to the end of
-    text. Not read: a `)` in a `case` pattern or a comment inside `$(…)`
-    closes it early.
+    text. `$'…'` is literal like `'…'`, but `\\'` does not close it.
+
+    Not read, like the other quote scanners in this file: a `)` in a `case`
+    pattern closes `$(…)` early; a `#` comment is scanned like code; an
+    unquoted heredoc body is read with ordinary quoting rules; an escaped
+    backtick inside backticks stays part of the outer body.
     """
     bodies: list[str] = []
     # [kind, characters, quote, parenthesis depth]; kind is "(" or "`", and
@@ -723,6 +727,21 @@ def _substitution_bodies(text: str) -> list[str]:
         if frame[2] == "'":
             if ch == "'":
                 frame[2] = ""
+        elif frame[2] == "$'":
+            # ANSI-C quoting: literal like '…', but `\'` does not close it.
+            if ch == "\\":
+                if chars is not None:
+                    chars.append(text[i : i + 2])
+                i += 2
+                continue
+            if ch == "'":
+                frame[2] = ""
+        elif ch == "$" and frame[2] == "" and text.startswith("'", i + 1):
+            frame[2] = "$'"
+            if chars is not None:
+                chars.append("$'")
+            i += 2
+            continue
         elif ch == "\\":
             if chars is not None:
                 chars.append(text[i : i + 2])

@@ -374,6 +374,12 @@ VERDICT_CASES = [
         "echo x > >(jq '.a = 1' a.json > b.json)",
     ),
     ("$(…) in einfachen Anfuehrungszeichen", "durch", "echo '$(yq -i .a=1 c.yaml)'"),
+    (
+        "Rewrite in $(…) nach $'…\\'…'",
+        "DENY",
+        "echo $'it\\'s' \"$(yq -i .a=1 c.yaml)\"",
+    ),
+    ("$(…) in $'…'", "durch", "echo $'$(yq -i .a=1 c.yaml)'"),
     # The usual way to pass a PR body: the quoted heredoc inside $(…) is data.
     (
         "PR-Body ueber $(cat <<'EOF')",
