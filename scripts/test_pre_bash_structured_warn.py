@@ -345,6 +345,58 @@ VERDICT_CASES = [
         "durch",
         """echo "grep -oE '\\"a\\"' f.json | awk '{print}'" """,
     ),
+    # A command substitution runs, also where the word around it is data to
+    # the other checks: echo's argument, a commit message (#110).
+    (
+        "Rewrite in $(…) in echo",
+        "DENY",
+        """echo "$(true; jq '.a = 1' config.json > tmp.json)\"""",
+    ),
+    ("Rewrite in Backticks in echo", "DENY", "echo `yq -i '.a = 1' c.yaml`"),
+    (
+        "Extraktion in $(…) in echo",
+        "DENY",
+        """echo "$(grep -oE '"x": "[^"]+"' f.json)\"""",
+    ),
+    (
+        "Rewrite in $(…) in -m",
+        "DENY",
+        """git commit -m "$(jq '.a = 1' config.json > tmp.json)\"""",
+    ),
+    (
+        "Rewrite in verschachteltem $(…) in echo",
+        "DENY",
+        """echo "$(echo "$(jq '.a = 1' a.json > b.json)")\"""",
+    ),
+    (
+        "Rewrite in >(…) nach echo",
+        "DENY",
+        "echo x > >(jq '.a = 1' a.json > b.json)",
+    ),
+    ("$(…) in einfachen Anfuehrungszeichen", "durch", "echo '$(yq -i .a=1 c.yaml)'"),
+    (
+        "Rewrite in $(…) nach $'…\\'…'",
+        "DENY",
+        "echo $'it\\'s' \"$(yq -i .a=1 c.yaml)\"",
+    ),
+    ("$(…) in $'…'", "durch", "echo $'$(yq -i .a=1 c.yaml)'"),
+    # The usual way to pass a PR body: the quoted heredoc inside $(…) is data.
+    (
+        "PR-Body ueber $(cat <<'EOF')",
+        "durch",
+        "gh pr create --body \"$(cat <<'EOF'\nIt's denied: jq '.a=1' a.json > a.json (really)\nEOF\n)\"",
+    ),
+    ("maskiertes \\$(…)", "durch", 'echo "\\$(yq -i .a=1 c.yaml)"'),
+    (
+        "$(…) im zitierten Heredoc",
+        "durch",
+        "cat <<'EOF'\n$(yq -i .a=1 c.yaml)\nEOF",
+    ),
+    (
+        "<(…) in doppelten Anfuehrungszeichen",
+        "durch",
+        """echo "a <(jq '.a = 1' a.json > b.json)\"""",
+    ),
     # The gh/glab field form: the '=' belongs to the field name, so it needs its
     # own branch in the pattern. Written as one alternative it never matched and
     # every review reply carrying an example was denied.
@@ -758,6 +810,8 @@ ADVISORY_CASES = [
         True,
         "python3 -c \"import json;print(json.load(open('a.json')))\"",
     ),
+    # A substitution body is a command of its own (#110).
+    ("cat in $(…) warnt", True, 'x="$(cat a.json)"'),
     ("Textdatei warnt nicht", False, "cat README.md"),
     ("jq warnt nicht", False, "jq . pkg.json"),
     # #83: the script's output is grepped, not cases.json.
@@ -945,6 +999,19 @@ TIMED_CASES += [
         "glab api " + repeated("/jobs/artifacts/") + " | grep -o y",
     ),
     ("100 KB yq", "durch", repeated("yq ")),
+    ("100 KB $(", "durch", repeated("$(")),
+    ("100 KB Backticks", "durch", repeated("`echo ")),
+    (
+        "100 KB verschiedene $(…)-Koerper",
+        "durch",
+        "".join(f"$(a{i} " for i in range(LONG // 9)),
+    ),
+    (
+        "100 KB $(echo, dann Rewrite",
+        "DENY",
+        # Whole words: repeated() would cut the last `echo` into the command.
+        "$(echo " * (LONG // 7) + "jq '.a = 1' a.json > b.json",
+    ),
     ("100 KB jq >", "durch", repeated("jq > ")),
     ("100 KB offene Heredocs", "durch", repeated("cat <<'A' ")),
     (

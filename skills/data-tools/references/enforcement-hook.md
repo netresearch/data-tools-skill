@@ -57,7 +57,12 @@ Each of these was a false positive first, then a rule:
   per statement, not per tool call, so two unrelated statements are judged
   separately.
 - An extraction pattern inside a **quoted heredoc** — that body is data being
-  written, not a command being run.
+  written, not a command being run. The same holds for an `echo`/`printf`
+  argument and a `--body`/`-m` value, except for a command substitution in
+  them: `echo "$(jq '.a = 1' c.json > t.json)"` runs the `jq`, so the body of
+  each `$(…)`, backtick pair and `<(…)`/`>(…)` is checked like a command of its
+  own. Inside single quotes or after a backslash (`\$(…)`) it is literal, and
+  so is `<(…)`/`>(…)` inside double quotes.
 - `gh api … --jq '.[].title' | grep -oE '^[A-Z]+'` — after `--jq` (or `-q`, or a
   `| jq`) the stream is text, and grepping text is what one does with it. The
   short form is recognised only between `gh api` and the next pipe: a bare `-q`

@@ -678,12 +678,143 @@ def is_cosmetic_locate(cmd: str) -> bool:
     return _locates(cmd) and not re.search(NON_COSMETIC_SINK, cmd)
 
 
-def _executable_text(cmd: str) -> str:
-    """Strip the parts of a command line that are data rather than instructions."""
-    cmd = _blank_grep_patterns(_strip_quoted_heredocs(cmd or ""))
+# What a command substitution leaves in the text around it once its body is
+# checked on its own: still an expansion, so a check that asks whether a word
+# carries `$` (CONTENT_OPTION in _writes_new_document) reads it as one.
+SUBSTITUTION_PLACEHOLDER = "$_"
+
+
+def _substitution_bodies(text: str) -> list[str]:
+    """The bodies of the command substitutions in text, nested ones included.
+
+    `$(…)`, backticks, and `<(…)`/`>(…)` outside double quotes run their body
+    as a command, also where the surrounding word is data to the other checks:
+    the argument of `echo`, a `-m "…"` message (#110). A substitution inside
+    single quotes, or after a backslash, is literal and is not one.
+
+    One pass over text with a stack of open substitutions, each with its own
+    quote state: a quote opened inside `$(…)` does not continue the one
+    around it. A nested body is replaced by SUBSTITUTION_PLACEHOLDER in the
+    body around it and returned on its own, so every character is copied once
+    and deep nesting costs linear time, not a recursion per level. `$((…))`
+    is read as a substitution whose body is `(…)`, an arithmetic expression
+    no check matches. A substitution that never closes runs to the end of
+    text. `$'…'` is literal like `'…'`, but `\\'` does not close it.
+
+    Not read, like the other quote scanners in this file: a `)` in a `case`
+    pattern closes `$(…)` early; a `#` comment is scanned like code; an
+    unquoted heredoc body is read with ordinary quoting rules; an escaped
+    backtick inside backticks stays part of the outer body.
+    """
+    bodies: list[str] = []
+    # [kind, characters, quote, parenthesis depth]; kind is "(" or "`", and
+    # the outermost frame (kind "") is the text itself, whose characters are
+    # not collected.
+    stack: list[list] = [["", None, "", 0]]
+    i = 0
+    n = len(text)
+
+    def close() -> None:
+        frame = stack.pop()
+        bodies.append("".join(frame[1]))
+        if stack[-1][1] is not None:
+            stack[-1][1].append(SUBSTITUTION_PLACEHOLDER)
+
+    while i < n:
+        frame = stack[-1]
+        chars = frame[1]
+        ch = text[i]
+        if frame[2] == "'":
+            if ch == "'":
+                frame[2] = ""
+        elif frame[2] == "$'":
+            # ANSI-C quoting: literal like '…', but `\'` does not close it.
+            if ch == "\\":
+                if chars is not None:
+                    chars.append(text[i : i + 2])
+                i += 2
+                continue
+            if ch == "'":
+                frame[2] = ""
+        elif ch == "$" and frame[2] == "" and text.startswith("'", i + 1):
+            frame[2] = "$'"
+            if chars is not None:
+                chars.append("$'")
+            i += 2
+            continue
+        elif ch == "\\":
+            if chars is not None:
+                chars.append(text[i : i + 2])
+            i += 2
+            continue
+        elif ch == "`":
+            if frame[0] == "`":
+                close()
+            else:
+                stack.append(["`", [], "", 0])
+            i += 1
+            continue
+        elif (
+            ch in "$<>"
+            and text.startswith("(", i + 1)
+            and not (ch != "$" and frame[2] == '"')
+        ):
+            stack.append(["(", [], "", 0])
+            i += 2
+            continue
+        elif frame[2] == '"':
+            if ch == '"':
+                frame[2] = ""
+        elif ch in "'\"":
+            frame[2] = ch
+        elif frame[0] == "(":
+            if ch == "(":
+                frame[3] += 1
+            elif ch == ")":
+                if frame[3] == 0:
+                    close()
+                    i += 1
+                    continue
+                frame[3] -= 1
+        if chars is not None:
+            chars.append(ch)
+        i += 1
+    while len(stack) > 1:
+        close()
+    return bodies
+
+
+def _strip_data(cmd: str) -> str:
+    """Blank grep patterns and remove prose option values from cmd."""
+    cmd = _blank_grep_patterns(cmd)
     for pattern in OPTION_VALUES:
         cmd = pattern.sub(" ", cmd)
     return cmd
+
+
+def _executable_units(cmd: str) -> list[str]:
+    """The command line and each command substitution in it, data stripped.
+
+    The first unit is the command line as before. Each substitution body
+    follows as a unit of its own, so a rewrite or an extraction that runs
+    inside `echo "$(…)"` or `git commit -m "$(…)"` is judged like the same
+    command typed on its own line. Identical bodies are judged once.
+    """
+    text = _strip_quoted_heredocs(cmd or "")
+    bodies = [
+        b
+        for b in dict.fromkeys(_substitution_bodies(text))
+        if b.replace(SUBSTITUTION_PLACEHOLDER, "").strip()
+    ]
+    return [_strip_data(unit) for unit in [text, *bodies]]
+
+
+def _executable_text(cmd: str) -> str:
+    """Strip the parts of a command line that are data rather than instructions.
+
+    Substitution bodies are appended as statements of their own, after `;`.
+    """
+    return ";\n".join(_executable_units(cmd))
 
 
 def reads_structured(stmt: str) -> bool:
@@ -704,7 +835,9 @@ def reads_structured(stmt: str) -> bool:
 
 def extracts_from_structured(cmd: str) -> bool:
     """True when one statement both reads structured data and extracts from it."""
-    for stmt in STATEMENT_SPLIT.split(_executable_text(cmd)):
+    for stmt in (
+        s for unit in _executable_units(cmd) for s in STATEMENT_SPLIT.split(unit)
+    ):
         if ECHOES_TEXT.match(stmt):
             continue
         if not reads_structured(stmt):
@@ -926,7 +1059,9 @@ def rewrites_structured(cmd: str) -> bool:
     """True when a statement writes a structured file back through a serializer."""
     if "DATA_TOOLS_REWRITE_OK=1" in cmd:
         return False
-    for stmt in _unquoted_statements(_executable_text(cmd)):
+    for stmt in (
+        s for unit in _executable_units(cmd) for s in _unquoted_statements(unit)
+    ):
         if ECHOES_TEXT.match(stmt):
             continue
         if SPONGE_INTO_STRUCTURED_FILE.search(stmt):
