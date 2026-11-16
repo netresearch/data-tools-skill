@@ -1147,7 +1147,7 @@ def first_per_session(nudges: list[str], payload: dict) -> list[str]:
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(sorted(seen), fh)
         except OSError:
-            pass
+            pass  # dedup state is optional; an unwritable cache only repeats a warning
     return fresh
 
 
