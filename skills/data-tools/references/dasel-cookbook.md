@@ -29,6 +29,12 @@ dasel -f pom.xml '.project.version'
 
 ## In-Place Editing
 
+`dasel put -f` writes the whole file back in dasel's formatting, so a one-value
+change to a hand-maintained file becomes a full-file diff. The plugin's hook
+does not see it. On such a file, read the value with dasel, change the line by
+hand and check `git diff --numstat` ([Editing an existing file](../SKILL.md#editing-an-existing-file)).
+Use the commands below for files with no hand-maintained formatting:
+
 ```bash
 # Set string value (auto-detects format, writes back)
 dasel put -f config.json -t string -v "localhost" '.database.host'
@@ -71,13 +77,14 @@ dasel -f config.yml -w toml
 ### Modifying package.json (alternative to jq)
 
 ```bash
-# Simpler syntax for single-value edits
+# Re-emits the whole file: only for files without hand-maintained formatting
 dasel put -f package.json -t string -v "2.1.0" '.version'
 ```
 
 ### Updating Docker-Compose (alternative to yq)
 
 ```bash
+# Re-emits the whole file: only for files without hand-maintained formatting
 dasel put -f docker-compose.yml -t string -v "postgres:16-alpine" '.services.postgres.image'
 ```
 
@@ -88,5 +95,6 @@ dasel put -f docker-compose.yml -t string -v "postgres:16-alpine" '.services.pos
 dasel -f Cargo.toml '.package.version'
 
 # Update pyproject.toml
+# Re-emits the whole file: only for files without hand-maintained formatting
 dasel put -f pyproject.toml -t string -v "3.0.0" '.project.version'
 ```

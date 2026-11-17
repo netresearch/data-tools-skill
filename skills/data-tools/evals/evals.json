@@ -57,11 +57,11 @@
       "id": 5,
       "eval_name": "anti-pattern-yaml-sed",
       "prompt": "Use sed to change the image tag in docker-compose.yml from node:18 to node:20 for the app service.",
-      "expected_output": "Refuses sed approach and uses yq instead: yq -i '.services.app.image = \"node:20\"' docker-compose.yml",
+      "expected_output": "Refuses the sed approach, locates the value with yq '.services.app.image' docker-compose.yml, then changes only that line with an exact edit and checks git diff --numstat.",
       "files": [],
       "assertions": [
         "Does NOT use sed on YAML",
-        "Uses yq with -i for in-place editing",
+        "Locates the value with yq and changes only that line; does not re-emit the file with yq -i",
         "Targets the correct path .services.app.image",
         "Explains why sed breaks on YAML indentation/multi-line values"
       ]
@@ -135,25 +135,25 @@
       "id": 11,
       "eval_name": "yq-in-place-edit-yaml",
       "prompt": "Add PHP version 8.4 to the matrix in .github/workflows/ci.yml. The current matrix is at .jobs.test.strategy.matrix.php-version and contains [\"8.2\", \"8.3\"].",
-      "expected_output": "A yq -i command that appends 8.4 to the matrix array.",
+      "expected_output": "Reads the matrix with yq, adds \"8.4\" to that one line with an exact edit, and checks the file still parses and the diff is one line.",
       "files": [],
       "assertions": [
-        "Uses yq with -i flag for in-place editing",
+        "Reads .jobs.test.strategy.matrix.php-version with yq before editing",
         "Targets the correct matrix path",
         "Appends '8.4' to the existing array (not replaces)",
-        "Does not use sed or manual text editing"
+        "Does not re-emit the whole file with yq -i or a redirect; checks the diff size (git diff --numstat)"
       ]
     },
     {
       "id": 12,
       "eval_name": "jq-in-place-edit-json",
       "prompt": "Update the version field in package.json from 1.0.0 to 2.0.0. Show the correct way to do in-place editing with jq.",
-      "expected_output": "Uses jq with temp file pattern since jq lacks -i: jq '.version = \"2.0.0\"' package.json > package.json.tmp && mv package.json.tmp package.json",
+      "expected_output": "Explains that writing jq output back (also via a temp file and mv) re-emits the whole file; reads .version with jq, changes that one line with an exact edit, re-parses with jq empty package.json and checks git diff --numstat.",
       "files": [],
       "assertions": [
-        "Uses jq for the JSON modification",
-        "Uses temp file pattern (not redirecting to same file)",
-        "The write-then-move pattern is atomic and safe",
+        "Uses jq to read and verify the value",
+        "Does not write the file back through jq, neither directly nor via a temp file",
+        "Re-parses the file and checks the diff is one changed line",
         "Does not use sed to modify JSON"
       ]
     },
@@ -239,13 +239,13 @@
       "id": 19,
       "eval_name": "yq-kubernetes-edit",
       "prompt": "Update the container image for the 'app' container in deployment.yml to 'myapp:3.0'. The image is under .spec.template.spec.containers[] where name is 'app'.",
-      "expected_output": "A yq command using select to target the correct container: yq -i '(.spec.template.spec.containers[] | select(.name == \"app\")).image = \"myapp:3.0\"' deployment.yml",
+      "expected_output": "A yq query using select to find the correct container (yq '.spec.template.spec.containers[] | select(.name == \"app\") | .image' deployment.yml), then an exact edit of that image line and a diff-size check.",
       "files": [],
       "assertions": [
         "Uses yq for YAML editing",
         "Uses select(.name == 'app') to target the correct container",
-        "Sets the .image field on the selected container",
-        "Uses -i for in-place editing"
+        "Changes the .image field of the selected container only",
+        "Does not re-emit the file with yq -i; checks the diff size (git diff --numstat)"
       ]
     },
     {
@@ -278,10 +278,10 @@
       "id": 22,
       "eval_name": "yq-docker-compose-service",
       "prompt": "Add a new Redis service to docker-compose.yml with image redis:7-alpine, port mapping 6379:6379, and a named volume redis-data:/data.",
-      "expected_output": "A yq -i command that adds the complete service definition.",
+      "expected_output": "Inserts the complete service block under services with an exact edit, then verifies with yq '.services.redis' and checks the diff contains only the added lines.",
       "files": [],
       "assertions": [
-        "Uses yq with -i for in-place editing",
+        "Verifies the result with yq instead of re-emitting the file with yq -i",
         "Adds the service under .services.redis",
         "Includes image, ports, and volumes fields",
         "Does not use echo/cat to append YAML text"

@@ -72,7 +72,12 @@ jq '[.items[].price] | add' cart.json
 
 ## In-Place Editing
 
-jq does not support in-place editing natively. Use a temp file pattern:
+jq does not support in-place editing natively. Writing its output back, through
+a temp file or `sponge`, re-emits the whole file in jq's formatting, so the
+plugin's hook denies both forms ([Editing an existing file](../SKILL.md#editing-an-existing-file)).
+On a hand-maintained file, read the value with jq and change the line by hand,
+then check `git diff --numstat`. The patterns below are for files with no
+hand-maintained formatting, with `DATA_TOOLS_REWRITE_OK=1` in the command:
 
 ```bash
 # Safe in-place edit with temp file
@@ -126,8 +131,9 @@ jq '.items[].name' response.json
 # BAD: sed on JSON changes (breaks on nested quotes, escapes)
 sed -i 's/"version": "1.0.0"/"version": "2.0.0"/' package.json
 
-# GOOD: Structural edit
-jq '.version = "2.0.0"' package.json > package.json.tmp && mv package.json.tmp package.json
+# GOOD: locate with jq, change that one line by hand, then check the diff
+jq -r '.version' package.json
+git diff --numstat -- package.json
 ```
 
 ```bash
@@ -335,6 +341,10 @@ Measured with jq 1.8.2.
 ## Configuration File Manipulation
 
 ### Read and Update package.json
+
+The write-backs below re-emit the whole file; on a hand-maintained
+`package.json` use the expression to compute the value, then edit the line by
+hand ([In-Place Editing](#in-place-editing)).
 
 ```bash
 # Read version
