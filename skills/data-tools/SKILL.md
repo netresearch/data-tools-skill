@@ -33,18 +33,17 @@ For the general legacy-tool → modern-tool comparison (`grep`→`rg`,
 ```bash
 jq -r '.version' package.json
 jq '.users[] | select(.role == "admin") | .name' users.json
-jq '.version = "2.0.0"' pkg.json > pkg.json.tmp && mv pkg.json.tmp pkg.json
 jq -s '.[0] * .[1]' base.json override.json
 ```
 
 Or `gh --jq` when the source is the GitHub CLI (see below) — no separate
 `jq` process needed.
 
-### yq -- YAML (in-place `-i`)
+### yq -- YAML
 
 ```bash
 yq '.services.web.image' docker-compose.yml
-yq -i '.services.app.image = "node:20"' docker-compose.yml
+yq '.jobs[].name' .gitlab-ci.yml
 yq -o json config.yml
 ```
 
@@ -83,12 +82,24 @@ gh pr list --json number,title --jq '.[] | [.number, .title] | @tsv'
 
 ---
 
+## Editing an existing file
+
+A serializer writes the whole document back in its own formatting: indentation, blank lines, key order, quoting. `jq … > file.json`, `yq -i`, `dasel put -f` and a script's `json.dump()` or `yaml.dump()` all do that, so a one-value change to a hand-maintained file becomes a full-file diff.
+
+1. Find the value with the parser: `yq '.services.app.image' docker-compose.yml`.
+2. Change that line with an exact-match edit (editor or edit tool), not by re-emitting the file.
+3. Parse the file again (`jq empty f.json`, `yq '.' f.yml > /dev/null`) and check the diff is the size you meant: `git diff --numstat -- <file>`.
+
+The plugin's hook denies the shell forms `yq -i`, `jq`/`yq`/`dasel … > file.json|yaml|toml` and `sponge` into such a file ([details](references/enforcement-hook.md#serializer-write-back)); it does not see `dasel put -f` or a script's `json.dump()`. A file with no hand-maintained formatting (a generated lock or cache) may be re-emitted whole: put `DATA_TOOLS_REWRITE_OK=1` in that command.
+
+---
+
 ## Anti-Patterns
 
 ```bash
 # BAD → GOOD: jq -r '.version' package.json
 grep '"version"' package.json | sed 's/.*"\(.*\)".*/\1/'
-# BAD → GOOD: yq -i '.services.app.image = "node:20"' compose.yml
+# BAD → GOOD: locate with yq '.services.app.image', then edit that one line
 sed -i 's/image: node:.*/image: node:20/' docker-compose.yml
 # BAD → GOOD: qsv select 2 data.csv
 awk -F',' '{print $2}' data.csv
@@ -107,6 +118,6 @@ python3 -c 'import json;print(json.load(open("plugin.json"))["version"])'
 | [dasel Cookbook](references/dasel-cookbook.md) | TOML/XML, conversion |
 | [CSV Processing](references/csv-processing.md) | qsv workflows, joins |
 | [mlr Cookbook](references/mlr-cookbook.md) | JSONL, DSL, stats, joins |
-| [Enforcement Hook](references/enforcement-hook.md) | PreToolUse gate shipped with this plugin: denies field extraction, warns once otherwise |
+| [Enforcement Hook](references/enforcement-hook.md) | PreToolUse gate shipped with this plugin: denies field extraction and serializer write-back, warns once otherwise |
 
 Docs: [jq](https://jqlang.github.io/jq/manual/), [yq](https://mikefarah.gitbook.io/yq/), [dasel](https://daseldocs.tomwright.me/), [qsv](https://github.com/jqnatividad/qsv#available-commands), [mlr](https://miller.readthedocs.io/).

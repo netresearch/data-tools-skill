@@ -24,7 +24,14 @@ yq '.services | keys' docker-compose.yml
 
 ## In-Place Editing
 
-yq supports true in-place editing with `-i`:
+yq supports true in-place editing with `-i`. It re-emits the whole file in
+yq's formatting: comments survive, but blank lines and quoting style can
+change, so a one-value edit can become a full-file diff. The plugin's hook
+therefore denies `-i` ([Editing an existing file](../SKILL.md#editing-an-existing-file)).
+On a hand-maintained file, run an expression below without `-i` to preview the
+result, then change the line by hand and check `git diff --numstat`. Keep `-i`
+for files with no hand-maintained formatting, with `DATA_TOOLS_REWRITE_OK=1` in
+the command.
 
 ```bash
 # Set a value

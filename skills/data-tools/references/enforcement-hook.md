@@ -45,6 +45,26 @@ the first firing carries the information, repeats only cost the reader attention
 while scrolling (measured: 43 advisory firings from six rules in a single
 session).
 
+## Serializer write-back
+
+Writing a structured file back through a serializer is denied: `yq -i`,
+`jq`/`yq`/`dasel … > file.json|jsonl|yaml|yml|toml` (a `.tmp` suffix after
+the extension counts too) and `… | sponge file.json`. The serializer re-emits
+the whole file in its own formatting, so a one-value change becomes a
+full-file diff. The deny message says what to do instead: read the value with
+the parser, change the line with an editor, check `git diff --numstat`.
+
+Two shapes write a new document and pass: a serializer under null input
+(`jq -n '{…}' > body.json`) and one fed straight from an API client
+(`gh api … | jq … > prs.json`). A command that contains
+`DATA_TOOLS_REWRITE_OK=1` passes too; use it for files with no hand-maintained
+formatting, such as a generated lock or cache. `docs/ARCHITECTURE.md` in the
+repository lists the exact matching rules.
+
+The hook sees shell commands only. `dasel put -f` writes the file itself, and a
+script's `json.dump()` or `yaml.dump()` is invisible to it; the same rule
+applies to both.
+
 ## What it deliberately lets through
 
 Each of these was a false positive first, then a rule:
