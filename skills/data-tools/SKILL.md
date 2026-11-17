@@ -51,7 +51,7 @@ yq -o json config.yml
 
 ```bash
 dasel -f Cargo.toml '.package.version'
-dasel put -f config.toml -t string -v "2.0" '.project.version'
+dasel -f pyproject.toml '.project.dependencies'
 dasel -f input.json -w yaml
 ```
 
