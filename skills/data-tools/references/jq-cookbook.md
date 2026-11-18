@@ -44,14 +44,22 @@ jq '.items[] | select(.email != null)' data.json
 jq '.files[] | select(.name | test("^test.*\\.js$"))' manifest.json
 ```
 
-A regex lives in a jq string literal, so a regex escape takes two
-backslashes: `test("\\.json$")`. A single one (`test("\.json$")`) does not
-reach the regex engine; the filter fails to compile (jq 1.8: `Invalid escape
-at line 1`; `gh --jq`: `invalid escape sequence "\." in string literal`).
-Every layer that strips a backslash before jq sees
-the filter (a double-quoted shell string, a JavaScript template literal, a
-`gh --jq` value built in another language) needs one more. Run the filter
-once on one input before a loop or a parallel batch repeats it.
+A regex lives in a jq string literal, and jq reads string escapes before the
+regex engine sees the pattern, so every regex backslash is written twice:
+`test("\\.json$")`. With a single one, two things can happen:
+
+- `\.` is no string escape, so the filter fails to compile (jq 1.8:
+  `Invalid escape at line 1`; `gh --jq`: `invalid escape sequence "\." in
+  string literal`).
+- `\b`, `\t`, `\n` and `\f` are string escapes, so `test("\bcat\b")`
+  compiles, hands the regex backspace characters instead of word boundaries
+  and returns `false` for `"cat"` without an error; `test("\\bcat\\b")`
+  returns `true`.
+
+Every layer that reads backslash escapes before jq doubles the count again: a
+JavaScript string or template literal holds `\\\\.` to deliver `\\.` to jq,
+and so does a double-quoted shell string. Run the filter once on one input
+before a loop or a parallel batch repeats it.
 
 ---
 
