@@ -44,6 +44,15 @@ jq '.items[] | select(.email != null)' data.json
 jq '.files[] | select(.name | test("^test.*\\.js$"))' manifest.json
 ```
 
+A regex lives in a jq string literal, so a regex escape takes two
+backslashes: `test("\\.json$")`. A single one (`test("\.json$")`) does not
+reach the regex engine; the filter fails to compile (jq 1.8: `Invalid escape
+at line 1`; `gh --jq`: `invalid escape sequence "\." in string literal`).
+Every layer that strips a backslash before jq sees
+the filter (a double-quoted shell string, a JavaScript template literal, a
+`gh --jq` value built in another language) needs one more. Run the filter
+once on one input before a loop or a parallel batch repeats it.
+
 ---
 
 ## Transformation
