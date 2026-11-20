@@ -47,6 +47,37 @@ yq -i 'del(.services.debug)' docker-compose.yml
 yq -i '.jobs.test.env.CI = "true"' .github/workflows/ci.yml
 ```
 
+### Editing by Hand
+
+**Anchor an insertion on the whole preceding entry.** Attribute lines belong
+to the key above them by indentation alone. An exact-match edit that anchors
+on a key and its first attribute line, then inserts a new entry below it,
+lands between that attribute and the ones still following — and those
+re-attach to the new entry without any parse error:
+
+```yaml
+services:
+  app.mailer:
+    alias: app.mailer.smtp
+  app.cache:               # inserted after "alias: app.mailer.smtp"
+    alias: app.cache.redis
+    public: true           # belonged to app.mailer, now belongs to app.cache
+```
+
+Read the lines below the anchor before editing, and put the entry through its
+last attribute line into the anchor, or anchor on the blank line between two
+complete entries. Then ask the parser for the neighbour you did not mean to
+change: `yq '.services["app.mailer"]' services.yaml` still lists `public: true`
+only if the insertion left it alone.
+
+**A straight `"` inside a double-quoted value ends the string.** German text
+typed with an ASCII closing quote — `t: "Status „Entwurf" gesetzt"` — closes
+the value at that `"`: yq stops with `did not find expected key`, and the
+same text in JSON fails `jq empty` with `Invalid numeric literal`. Write the
+typographic closing quote (`“`, U+201C) or escape it as `\"`, then parse the
+file again ([Editing an existing file](../SKILL.md#editing-an-existing-file),
+step 3). In an unquoted YAML scalar the same character is harmless.
+
 ---
 
 ## Anti-Patterns
