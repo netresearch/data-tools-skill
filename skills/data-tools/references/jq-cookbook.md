@@ -351,6 +351,20 @@ Note that `//` is itself defined on the same rule — `("" // "fallback")` is `"
 not `"fallback"` — so it fills in for `null` and `false` only, which is exactly
 what you want here and a surprise if you expected it to catch `""` too.
 
+The same rule makes `//` wrong for a boolean whose default is `true`:
+`.flag // true` turns an explicit `false` into `true`, so a setting a user
+switched off reads as on. Default only a missing value:
+
+```bash
+# Prints [true,false,true]
+jq -nc '[{flag: true}, {flag: false}, {}] | map(if .flag == null then true else .flag end)'
+
+# WRONG — prints [true,true,true]
+jq -nc '[{flag: true}, {flag: false}, {}] | map(.flag // true)'
+```
+
+`.flag // false` is safe, because `null` and `false` give the same result.
+
 Measured with jq 1.8.2.
 
 ---
